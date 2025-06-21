@@ -1,37 +1,42 @@
 import React from 'react';
 import Layout from './Layout';
 
-const Alerts = () => {
-  const alerts = [
+const Users = () => {
+  const users = [
     {
-      title: 'Flood Warning',
-      type: 'Warning',
+      name: 'John Doe',
+      email: 'john.doe@example.com',
+      role: 'Admin',
       status: 'Active',
-      createdAt: '2024-07-26 10:00 AM'
+      lastActive: '2 hours ago'
     },
     {
-      title: 'Severe Weather Alert',
-      type: 'Alert',
+      name: 'Jane Smith',
+      email: 'jane.smith@example.com',
+      role: 'User',
       status: 'Active',
-      createdAt: '2024-07-25 03:00 PM'
+      lastActive: '1 day ago'
     },
     {
-      title: 'Evacuation Notice',
-      type: 'Notice',
+      name: 'Mike Johnson',
+      email: 'mike.johnson@example.com',
+      role: 'Volunteer',
       status: 'Inactive',
-      createdAt: '2024-07-24 09:00 AM'
+      lastActive: '1 week ago'
     },
     {
-      title: 'Emergency Assistance Request',
-      type: 'Request',
+      name: 'Sarah Wilson',
+      email: 'sarah.wilson@example.com',
+      role: 'User',
       status: 'Active',
-      createdAt: '2024-07-23 05:00 PM'
+      lastActive: '3 hours ago'
     },
     {
-      title: 'Safety Check-In',
-      type: 'Check-In',
-      status: 'Inactive',
-      createdAt: '2024-07-22 11:00 AM'
+      name: 'David Brown',
+      email: 'david.brown@example.com',
+      role: 'Volunteer',
+      status: 'Active',
+      lastActive: '30 minutes ago'
     }
   ];
 
@@ -42,29 +47,14 @@ const Alerts = () => {
         <div className="px-6 py-6">
           <div className="flex flex-wrap justify-between gap-3">
             <div className="flex flex-col gap-3">
-              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Alerts</p>
+              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Users</p>
               <p className="text-[#60758a] text-sm font-normal leading-normal">
-                View and manage emergency alerts, warnings, and notifications.
+                Manage user accounts, roles, and permissions.
               </p>
             </div>
             <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal">
-              <span className="truncate">New Alert</span>
+              <span className="truncate">Add User</span>
             </button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="pb-3">
-          <div className="flex border-b border-[#dbe0e6] px-6 gap-8">
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-[#dce8f3] text-[#111418] pb-[13px] pt-4" href="#">
-              <p className="text-[#111418] text-sm font-bold leading-normal tracking-[0.015em]">All</p>
-            </a>
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-[#60758a] pb-[13px] pt-4" href="#">
-              <p className="text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">Active</p>
-            </a>
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-[#60758a] pb-[13px] pt-4" href="#">
-              <p className="text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">Inactive</p>
-            </a>
           </div>
         </div>
 
@@ -79,7 +69,7 @@ const Alerts = () => {
                   </svg>
                 </div>
                 <input
-                  placeholder="Search alerts"
+                  placeholder="Search users"
                   className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#111418] focus:outline-0 focus:ring-0 border-none bg-[#f0f2f5] focus:border-none h-full placeholder:text-[#60758a] px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal"
                 />
               </div>
@@ -87,51 +77,61 @@ const Alerts = () => {
           </div>
         </div>
 
-        {/* Alerts Table */}
+        {/* Users Table */}
         <div className="px-6 pb-6">
           <div className="overflow-hidden rounded-lg border border-[#dbe0e6] bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-white border-b border-[#dbe0e6]">
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-[400px]">
-                      Title
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
+                      Name
                     </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
-                      Type
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
+                      Email
                     </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
+                      Role
+                    </th>
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
                       Status
                     </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-[400px]">
-                      Created At
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
+                      Last Active
                     </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#dbe0e6]">
-                  {alerts.map((alert, index) => (
+                  {users.map((user, index) => (
                     <tr key={index} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        {alert.title}
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal w-full">
-                          <span className="truncate">{alert.type}</span>
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal w-full">
-                          <span className="truncate">{alert.status}</span>
-                        </button>
+                        {user.name}
                       </td>
                       <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
-                        {alert.createdAt}
+                        {user.email}
+                      </td>
+                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                          user.status === 'Active' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {user.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
+                        {user.lastActive}
                       </td>
                       <td className="px-6 py-4 text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">
-                        View
+                        Edit
                       </td>
                     </tr>
                   ))}
@@ -145,4 +145,4 @@ const Alerts = () => {
   );
 };
 
-export default Alerts; 
+export default Users; 
