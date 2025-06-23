@@ -5,17 +5,18 @@ import Users from './components/Users';
 import History from './components/History'; 
 import Alerts from './components/Alerts';
 import FloodAffectedAreas from './components/FloodAffectedAreas';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/users" element={<Users />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/flood-affected-areas" element={<FloodAffectedAreas />} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+        <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+        <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+        <Route path="/flood-affected-areas" element={<ProtectedRoute><FloodAffectedAreas /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

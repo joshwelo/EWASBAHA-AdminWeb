@@ -1,15 +1,74 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth, db } from '../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { toast } from 'react-toastify';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleAuthError = (error) => {
+    let errorMsg = 'An error occurred. Please try again.';
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      errorMsg = 'Invalid email or password.';
+    } else if (error.code === 'auth/too-many-requests') {
+      errorMsg = 'Too many failed attempts. Please try again later.';
+    }
+    setError(errorMsg);
+    toast.error(errorMsg, { icon: '❌', className: 'login-error-toast' });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Since this is a demo, we'll just navigate to the dashboard
-    navigate('/dashboard');
+    setError('');
+    
+    if (!formData.email.trim() || !formData.password.trim()) {
+      const errorMsg = 'Email and password are required.';
+      setError(errorMsg);
+      toast.warning(errorMsg, { icon: "⚠️" });
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+      const user = userCredential.user;
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (!userData.isAdmin || userData.isAdmin !== true) {
+          const errorMsg = "Access denied. This portal is for administrators only.";
+          setError(errorMsg);
+          toast.error(errorMsg, { 
+            icon: "🚫",
+            className: "admin-error-toast"
+          });
+          await auth.signOut();
+          setLoading(false);
+          return;
+        }
+        // Successful login
+        toast.success("Login successful! Redirecting to dashboard...", { icon: "✅" });
+        navigate('/dashboard');
+      } else {
+        const errorMsg = "This account is not registered in our system. Please contact support.";
+        setError(errorMsg);
+        toast.error(errorMsg, { 
+          icon: "❓",
+          className: "not-registered-toast"
+        });
+        await auth.signOut();
+        setLoading(false);
+      }
+    } catch (error) {
+      handleAuthError(error);
+      setLoading(false);
+    }
   };
 
   return (
@@ -26,8 +85,8 @@ const Login = () => {
                     type="email"
                     placeholder="Enter your username"
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#111518] focus:outline-0 focus:ring-0 border border-[#dbe1e6] bg-white focus:border-[#dbe1e6] h-14 placeholder:text-[#60768a] p-[15px] text-base font-normal leading-normal"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     required
                   />
                 </label>
@@ -39,8 +98,8 @@ const Login = () => {
                     type="password"
                     placeholder="Enter your password"
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#111518] focus:outline-0 focus:ring-0 border border-[#dbe1e6] bg-white focus:border-[#dbe1e6] h-14 placeholder:text-[#60768a] p-[15px] text-base font-normal leading-normal"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required
                   />
                 </label>
@@ -50,11 +109,15 @@ const Login = () => {
                 <button
                   type="submit"
                   className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 px-4 flex-1 bg-[#0b80ee] text-white text-sm font-bold leading-normal tracking-[0.015em]"
+                  disabled={loading}
                 >
-                  <span className="truncate">Login</span>
+                  <span className="truncate">{loading ? 'Logging in...' : 'Login'}</span>
                 </button>
               </div>
             </form>
+            {error && (
+              <p className="text-red-500 text-sm font-medium leading-normal px-4 pb-2 text-center">{error}</p>
+            )}
           </div>
         </div>
       </div>
