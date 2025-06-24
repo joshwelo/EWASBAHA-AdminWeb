@@ -1,44 +1,62 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { collection, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import Layout from './Layout';
+import AddUserModal from './AddUserModal';
+import EditUserModal from './EditUserModal';
 
 const Users = () => {
-  const users = [
-    {
-      name: 'John Doe',
-      email: 'john.doe@example.com',
-      role: 'Admin',
-      status: 'Active',
-      lastActive: '2 hours ago'
-    },
-    {
-      name: 'Jane Smith',
-      email: 'jane.smith@example.com',
-      role: 'User',
-      status: 'Active',
-      lastActive: '1 day ago'
-    },
-    {
-      name: 'Mike Johnson',
-      email: 'mike.johnson@example.com',
-      role: 'Volunteer',
-      status: 'Inactive',
-      lastActive: '1 week ago'
-    },
-    {
-      name: 'Sarah Wilson',
-      email: 'sarah.wilson@example.com',
-      role: 'User',
-      status: 'Active',
-      lastActive: '3 hours ago'
-    },
-    {
-      name: 'David Brown',
-      email: 'david.brown@example.com',
-      role: 'Volunteer',
-      status: 'Active',
-      lastActive: '30 minutes ago'
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const usersCollection = collection(db, 'users');
+      const usersSnapshot = await getDocs(usersCollection);
+      const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(usersList);
+    } catch (error) {
+      console.error("Error fetching users: ", error);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleAddUser = () => {
+    setAddModalOpen(true);
+  };
+
+  const handleEditUser = (user) => {
+    setSelectedUser(user);
+    setEditModalOpen(true);
+  };
+
+  const handleDeleteUser = (user) => {
+    setSelectedUser(user);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (selectedUser) {
+      try {
+        await deleteDoc(doc(db, 'users', selectedUser.id));
+        fetchUsers();
+        setDeleteModalOpen(false);
+        setSelectedUser(null);
+      } catch (error) {
+        console.error("Error deleting user: ", error);
+      }
+    }
+  };
 
   return (
     <Layout>
@@ -52,7 +70,10 @@ const Users = () => {
                 Manage user accounts, roles, and permissions.
               </p>
             </div>
-            <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal">
+            <button
+              onClick={handleAddUser}
+              className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal"
+            >
               <span className="truncate">Add User</span>
             </button>
           </div>
@@ -91,13 +112,10 @@ const Users = () => {
                       Email
                     </th>
                     <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
-                      Role
+                      User Type
                     </th>
                     <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
-                      Last Active
+                      Verification
                     </th>
                     <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
                       Actions
@@ -105,44 +123,78 @@ const Users = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#dbe0e6]">
-                  {users.map((user, index) => (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        {user.name}
-                      </td>
-                      <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
-                        {user.email}
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          user.status === 'Active' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {user.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
-                        {user.lastActive}
-                      </td>
-                      <td className="px-6 py-4 text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">
-                        Edit
-                      </td>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="5" className="text-center py-4">Loading...</td>
                     </tr>
-                  ))}
+                  ) : (
+                    users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                          {user.firstName} {user.lastName}
+                        </td>
+                        <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
+                          {user.email}
+                        </td>
+                        <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {user.userType}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                            user.isVerified
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {user.isVerified ? 'Verified' : 'Not Verified'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium leading-normal space-x-2">
+                          <button onClick={() => handleEditUser(user)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
+                          <button onClick={() => handleDeleteUser(user)} className="text-red-600 hover:text-red-900">Delete</button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
       </div>
+      {isAddModalOpen && <AddUserModal closeModal={() => setAddModalOpen(false)} refreshUsers={fetchUsers} />}
+      {isEditModalOpen && <EditUserModal user={selectedUser} closeModal={() => setEditModalOpen(false)} refreshUsers={fetchUsers} />}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+          <div className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3 text-center">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Delete User</h3>
+              <div className="mt-2 px-7 py-3">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete this user? This action cannot be undone.
+                </p>
+              </div>
+              <div className="items-center px-4 py-3">
+                <button
+                  onClick={confirmDeleteUser}
+                  className="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="mt-3 px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
 
-export default Users; 
+export default Users;
