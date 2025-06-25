@@ -13,6 +13,7 @@ const EditUserModal = ({ user, closeModal, refreshUsers }) => {
     barangay: '',
     userType: 'user',
     isVerified: false,
+    applicationStatus: 'pending',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,6 +30,7 @@ const EditUserModal = ({ user, closeModal, refreshUsers }) => {
         barangay: user.barangay || '',
         userType: user.userType || 'user',
         isVerified: user.isVerified || false,
+        applicationStatus: user.applicationStatus || 'pending',
       });
     }
   }, [user]);
@@ -77,6 +79,16 @@ const EditUserModal = ({ user, closeModal, refreshUsers }) => {
                 <option value="user">User</option>
                 <option value="rescuer">Rescuer</option>
                 <option value="volunteer">Volunteer</option>
+              </select>
+              <select
+                name="applicationStatus"
+                onChange={handleChange}
+                value={formData.applicationStatus}
+                className="form-select"
+              >
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
               </select>
               <div className="flex items-center">
                 <input type="checkbox" name="isVerified" onChange={handleChange} checked={formData.isVerified} className="form-checkbox" />

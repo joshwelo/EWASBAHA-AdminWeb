@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
 import AddUserModal from './AddUserModal';
 import EditUserModal from './EditUserModal';
+import VolunteerApplicationModal from './VolunteerApplicationModal';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -12,6 +13,10 @@ const Users = () => {
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedApplication, setSelectedApplication] = useState(null);
+  const [isApplicationModalOpen, setApplicationModalOpen] = useState(false);
+  const [applicationLoading, setApplicationLoading] = useState(false);
+  const [applicationError, setApplicationError] = useState('');
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -55,6 +60,25 @@ const Users = () => {
       } catch (error) {
         console.error("Error deleting user: ", error);
       }
+    }
+  };
+
+  const handleViewApplication = async (userId) => {
+    setApplicationLoading(true);
+    setApplicationError('');
+    setSelectedApplication(null);
+    setApplicationModalOpen(true);
+    try {
+      const appDoc = await getDoc(doc(db, 'volunteerApplications', userId));
+      if (appDoc.exists()) {
+        setSelectedApplication(appDoc.data());
+      } else {
+        setSelectedApplication(null);
+      }
+    } catch (error) {
+      setApplicationError('Failed to fetch application.');
+    } finally {
+      setApplicationLoading(false);
     }
   };
 
@@ -118,6 +142,9 @@ const Users = () => {
                       Verification
                     </th>
                     <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
+                      Application Status
+                    </th>
+                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal">
                       Actions
                     </th>
                   </tr>
@@ -125,7 +152,7 @@ const Users = () => {
                 <tbody className="divide-y divide-[#dbe0e6]">
                   {loading ? (
                     <tr>
-                      <td colSpan="5" className="text-center py-4">Loading...</td>
+                      <td colSpan="6" className="text-center py-4">Loading...</td>
                     </tr>
                   ) : (
                     users.map((user) => (
@@ -149,6 +176,23 @@ const Users = () => {
                           }`}>
                             {user.isVerified ? 'Verified' : 'Not Verified'}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                            user.applicationStatus === 'approved'
+                              ? 'bg-green-100 text-green-800'
+                              : user.applicationStatus === 'rejected'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {user.applicationStatus ? user.applicationStatus.charAt(0).toUpperCase() + user.applicationStatus.slice(1) : 'Pending'}
+                          </span>
+                          <button
+                            className="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-xs font-medium hover:bg-blue-600"
+                            onClick={() => handleViewApplication(user.id)}
+                          >
+                            View Application
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-sm font-medium leading-normal space-x-2">
                           <button onClick={() => handleEditUser(user)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
@@ -192,6 +236,15 @@ const Users = () => {
             </div>
           </div>
         </div>
+      )}
+      {isApplicationModalOpen && (
+        <VolunteerApplicationModal
+          isOpen={isApplicationModalOpen}
+          onClose={() => setApplicationModalOpen(false)}
+          application={selectedApplication}
+          loading={applicationLoading}
+          error={applicationError}
+        />
       )}
     </Layout>
   );

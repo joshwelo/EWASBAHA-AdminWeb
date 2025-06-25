@@ -33,6 +33,7 @@ const AddUserModal = ({ closeModal, refreshUsers }) => {
     municipality: '',
     barangay: '',
     userType: 'user',
+    applicationStatus: 'pending',
   });
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -113,6 +114,7 @@ const AddUserModal = ({ closeModal, refreshUsers }) => {
         barangay: formData.barangay.trim(),
         isVerified: false,
         userType: formData.userType,
+        applicationStatus: formData.applicationStatus,
         createdAt: new Date().toISOString(),
       });
 
@@ -243,6 +245,16 @@ const AddUserModal = ({ closeModal, refreshUsers }) => {
                   <option value="user">User</option>
                   <option value="rescuer">Rescuer</option>
                   <option value="volunteer">Volunteer</option>
+                </select>
+                <select
+                  name="applicationStatus"
+                  onChange={handleChange}
+                  value={formData.applicationStatus}
+                  className="form-select"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
                 </select>
               </div>
               
