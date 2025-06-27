@@ -6,6 +6,8 @@ import History from './components/History';
 import Alerts from './components/Alerts';
 import FloodAffectedAreas from './components/FloodAffectedAreas';
 import ProtectedRoute from './components/ProtectedRoute';
+import EvacuationCenter from './components/EvacuationCenter';
+import SosPage from './components/SosPage';
 
 function App() {
   return (
@@ -17,6 +19,8 @@ function App() {
         <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
         <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
         <Route path="/flood-affected-areas" element={<ProtectedRoute><FloodAffectedAreas /></ProtectedRoute>} />
+        <Route path="/evacuation-center" element={<ProtectedRoute><EvacuationCenter /></ProtectedRoute>} />
+        <Route path="/sos" element={<ProtectedRoute><SosPage /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

@@ -71,7 +71,7 @@ const Users = () => {
     try {
       const appDoc = await getDoc(doc(db, 'volunteerApplications', userId));
       if (appDoc.exists()) {
-        setSelectedApplication(appDoc.data());
+        setSelectedApplication({ ...appDoc.data(), id: userId });
       } else {
         setSelectedApplication(null);
       }
@@ -178,15 +178,22 @@ const Users = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            user.applicationStatus === 'approved'
-                              ? 'bg-green-100 text-green-800'
-                              : user.applicationStatus === 'rejected'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {user.applicationStatus ? user.applicationStatus.charAt(0).toUpperCase() + user.applicationStatus.slice(1) : 'Pending'}
-                          </span>
+                        <span
+  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+    user.applicationStatus === 'approved'
+      ? 'bg-green-100 text-green-800'
+      : user.applicationStatus === 'rejected'
+        ? 'bg-red-100 text-red-800'
+        : user.applicationStatus === 'pending'
+          ? 'bg-yellow-100 text-yellow-800'
+          : 'bg-gray-100 text-gray-800'
+  }`}
+>
+  {user.applicationStatus
+    ? user.applicationStatus.charAt(0).toUpperCase() + user.applicationStatus.slice(1)
+    : 'None'}
+</span>
+
                           <button
                             className="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-xs font-medium hover:bg-blue-600"
                             onClick={() => handleViewApplication(user.id)}
@@ -244,6 +251,7 @@ const Users = () => {
           application={selectedApplication}
           loading={applicationLoading}
           error={applicationError}
+          refreshUsers={fetchUsers}
         />
       )}
     </Layout>
