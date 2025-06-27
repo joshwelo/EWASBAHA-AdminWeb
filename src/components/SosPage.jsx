@@ -17,28 +17,85 @@ const defaultCenter = {
 const SosPage = () => {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q"
+    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q",
+    libraries: ['geometry', 'maps']
   });
 
   const [map, setMap] = useState(null);
   const [sosReports, setSosReports] = useState([]);
+  const [filteredReports, setFilteredReports] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [selectedVolunteer, setSelectedVolunteer] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [filterType, setFilterType] = useState('urgency'); // 'urgency' or 'nearest'
+  const [userLocation, setUserLocation] = useState(defaultCenter);
+
+  // Calculate distance between two points using Haversine formula
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+    return distance;
+  };
+
+  // Get user's current location
+  const getUserLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.log('Error getting location:', error);
+          // Keep default location if geolocation fails
+        }
+      );
+    }
+  };
 
   // Fetch SOS reports
   const fetchSosReports = async () => {
     setLoading(true);
     const snapshot = await getDocs(collection(db, 'sos_reports'));
     const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    // Sort by urgencyScore descending
-    reports.sort((a, b) => b.urgencyScore - a.urgencyScore);
     setSosReports(reports);
     setLoading(false);
   };
+
+  // Filter and sort reports based on selected filter
+  const filterAndSortReports = useCallback(() => {
+    let filtered = sosReports.filter(r => r.status !== 'safe');
+    
+    if (filterType === 'urgency') {
+      // Sort by urgency score descending
+      filtered.sort((a, b) => b.urgencyScore - a.urgencyScore);
+    } else if (filterType === 'nearest') {
+      // Calculate distance for each report and sort by distance ascending
+      filtered = filtered.map(report => ({
+        ...report,
+        distance: calculateDistance(
+          userLocation.lat,
+          userLocation.lng,
+          report.location.latitude,
+          report.location.longitude
+        )
+      })).sort((a, b) => a.distance - b.distance);
+    }
+    
+    setFilteredReports(filtered);
+  }, [sosReports, filterType, userLocation]);
 
   // Fetch volunteers
   const fetchVolunteers = async () => {
@@ -50,7 +107,12 @@ const SosPage = () => {
   useEffect(() => {
     fetchSosReports();
     fetchVolunteers();
+    getUserLocation();
   }, []);
+
+  useEffect(() => {
+    filterAndSortReports();
+  }, [sosReports, filterType, userLocation, filterAndSortReports]);
 
   const onLoad = useCallback(function callback(map) {
     const bounds = new window.google.maps.LatLngBounds(defaultCenter);
@@ -61,6 +123,16 @@ const SosPage = () => {
   const onUnmount = useCallback(function callback(map) {
     setMap(null);
   }, []);
+
+  // Navigate map to specific coordinates
+  const navigateToSOS = (report) => {
+    if (map) {
+      const position = { lat: report.location.latitude, lng: report.location.longitude };
+      map.panTo(position);
+      map.setZoom(15);
+      setSelectedReport(report);
+    }
+  };
 
   // Assign rescuer
   const handleAssignRescuer = async () => {
@@ -121,7 +193,7 @@ const SosPage = () => {
                   onLoad={onLoad}
                   onUnmount={onUnmount}
                 >
-                  {sosReports.filter(r => r.status !== 'safe').map((report) => (
+                  {filteredReports.map((report) => (
                     <Marker
                       key={report.id}
                       position={{ lat: report.location.latitude, lng: report.location.longitude }}
@@ -141,6 +213,9 @@ const SosPage = () => {
                         <p><span className="font-medium">People:</span> {selectedReport.numberOfPeople}</p>
                         <p><span className="font-medium">Status:</span> {selectedReport.status}</p>
                         <p><span className="font-medium">Notes:</span> {selectedReport.notes}</p>
+                        {selectedReport.distance && (
+                          <p><span className="font-medium">Distance:</span> {selectedReport.distance.toFixed(2)} km</p>
+                        )}
                         <div className="mt-2">
                           {selectedReport.status === 'pending' && (
                             <>
@@ -181,16 +256,71 @@ const SosPage = () => {
             </div>
             <div>
               <div className="flex flex-col gap-4">
+                {/* Filter Controls */}
                 <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm">
-                  <p className="text-[#111418] text-base font-medium leading-normal mb-2">SOS Priority List</p>
+                  <p className="text-[#111418] text-base font-medium leading-normal mb-3">Filter SOS Reports</p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="filter"
+                        value="urgency"
+                        checked={filterType === 'urgency'}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">Highest Urgency Score</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="filter"
+                        value="nearest"
+                        checked={filterType === 'nearest'}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">Nearest Location</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* SOS Priority List */}
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm">
+                  <p className="text-[#111418] text-base font-medium leading-normal mb-2">
+                    SOS {filterType === 'urgency' ? 'Priority' : 'Distance'} List
+                  </p>
                   {loading ? <div>Loading...</div> : (
                     <ol className="list-decimal ml-4">
-                      {sosReports.filter(r => r.status !== 'safe').map((report, idx) => (
+                      {filteredReports.map((report, idx) => (
                         <li key={report.id} className="mb-2">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-[#0b80ee]">Urgency: {report.urgencyScore}</span>
-                            <span className="text-[#111418]">{report.numberOfPeople} people, Danger Level: {report.dangerLevel}</span>
+                          <div 
+                            className="flex flex-col cursor-pointer hover:bg-gray-50 p-2 rounded transition-colors"
+                            onClick={() => navigateToSOS(report)}
+                          >
+                            <span className="font-bold text-[#0b80ee]">
+                              {filterType === 'urgency' 
+                                ? `Urgency: ${report.urgencyScore}` 
+                                : `Distance: ${report.distance?.toFixed(2)} km`
+                              }
+                            </span>
+                            <span className="text-[#111418]">
+                              {report.numberOfPeople} people, Danger Level: {report.dangerLevel}
+                            </span>
                             <span className="text-[#60758a] text-xs">Status: {report.status}</span>
+                            {filterType === 'urgency' && report.distance && (
+                              <span className="text-[#60758a] text-xs">
+                                Distance: {report.distance.toFixed(2)} km
+                              </span>
+                            )}
+                            {filterType === 'nearest' && (
+                              <span className="text-[#60758a] text-xs">
+                                Urgency: {report.urgencyScore}
+                              </span>
+                            )}
+                            <span className="text-[#0b80ee] text-xs mt-1 hover:underline">
+                              Click to view on map →
+                            </span>
                           </div>
                         </li>
                       ))}
@@ -209,4 +339,4 @@ const SosPage = () => {
   );
 };
 
-export default SosPage; 
+export default SosPage;

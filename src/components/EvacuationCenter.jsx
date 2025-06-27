@@ -28,7 +28,8 @@ const initialForm = {
 const EvacuationCenter = () => {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q"
+    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q",
+    libraries: ['geometry', 'maps']
   });
 
   const [map, setMap] = useState(null);
