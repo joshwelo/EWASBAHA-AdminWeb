@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { collection, getDocs, updateDoc, doc, query, where, arrayUnion } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
 
@@ -24,11 +24,10 @@ const SosPage = () => {
   const [map, setMap] = useState(null);
   const [sosReports, setSosReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
-  const [resolvedReports, setResolvedReports] = useState([]);
-  const [rescuers, setRescuers] = useState([]);
+  const [volunteers, setVolunteers] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
-  const [selectedRescuers, setSelectedRescuers] = useState([]);
+  const [selectedVolunteer, setSelectedVolunteer] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [filterType, setFilterType] = useState('urgency');
@@ -191,12 +190,32 @@ const SosPage = () => {
       setTimeout(() => setMessage(''), 3000);
       setSelectedReport(null);
       setSelectedRescuers([]);
+      setSelectedRescuers([]);
       fetchSosReports();
     } catch (err) {
+      setMessage('Failed to assign rescuers.');
       setMessage('Failed to assign rescuers.');
       setTimeout(() => setMessage(''), 3000);
     }
     setAssigning(false);
+  };
+
+  // Remove a rescuer from the assignment
+  const handleRemoveRescuer = async (rescuerId) => {
+    if (!selectedReport) return;
+    try {
+      const updatedRescuers = (selectedReport.rescueUnits || []).filter(id => id !== rescuerId);
+      await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
+        rescueUnits: updatedRescuers,
+        status: updatedRescuers.length > 0 ? 'responding' : 'pending',
+      });
+      setMessage('Rescuer removed from assignment.');
+      setTimeout(() => setMessage(''), 3000);
+      fetchSosReports();
+    } catch (err) {
+      setMessage('Failed to remove rescuer.');
+      setTimeout(() => setMessage(''), 3000);
+    }
   };
 
   // Remove a rescuer from the assignment
