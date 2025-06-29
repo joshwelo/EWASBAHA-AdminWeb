@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
 
@@ -24,10 +24,10 @@ const SosPage = () => {
   const [map, setMap] = useState(null);
   const [sosReports, setSosReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
-  const [volunteers, setVolunteers] = useState([]);
+  const [rescuers, setRescuers] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
-  const [selectedVolunteer, setSelectedVolunteer] = useState('');
+  const [selectedRescuers, setSelectedRescuers] = useState([]); // Changed to array for multiple selection
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [filterType, setFilterType] = useState('urgency'); // 'urgency' or 'nearest'
@@ -65,6 +65,11 @@ const SosPage = () => {
     }
   };
 
+  // Helper function to safely access form data
+  const getFormValue = (report, field, defaultValue = 'N/A') => {
+    return report?.formAnswers?.[field] ?? defaultValue;
+  };
+
   // Fetch SOS reports
   const fetchSosReports = async () => {
     setLoading(true);
@@ -97,16 +102,16 @@ const SosPage = () => {
     setFilteredReports(filtered);
   }, [sosReports, filterType, userLocation]);
 
-  // Fetch volunteers
-  const fetchVolunteers = async () => {
-    const q = query(collection(db, 'users'), where('userType', '==', 'volunteer'));
+  // Fetch rescuers instead of volunteers
+  const fetchRescuers = async () => {
+    const q = query(collection(db, 'users'), where('userType', '==', 'rescuer'));
     const snapshot = await getDocs(q);
-    setVolunteers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    setRescuers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
 
   useEffect(() => {
     fetchSosReports();
-    fetchVolunteers();
+    fetchRescuers();
     getUserLocation();
   }, []);
 
@@ -131,29 +136,69 @@ const SosPage = () => {
       map.panTo(position);
       map.setZoom(15);
       setSelectedReport(report);
+      // Reset selected rescuers when switching reports
+      setSelectedRescuers([]);
     }
   };
 
-  // Assign rescuer
-  const handleAssignRescuer = async () => {
-    if (!selectedVolunteer || !selectedReport) return;
+  // Handle rescuer selection (multiple selection)
+  const handleRescuerSelection = (rescuerId) => {
+    setSelectedRescuers(prev => {
+      if (prev.includes(rescuerId)) {
+        // Remove if already selected
+        return prev.filter(id => id !== rescuerId);
+      } else {
+        // Add if not selected
+        return [...prev, rescuerId];
+      }
+    });
+  };
+
+  // Assign multiple rescuers
+  const handleAssignRescuers = async () => {
+    if (!selectedRescuers.length || !selectedReport) return;
     setAssigning(true);
     try {
+      // Get existing rescuer units or initialize as empty array
+      const existingRescuers = selectedReport.rescueUnits || [];
+      
+      // Combine existing rescuers with newly selected ones (avoid duplicates)
+      const updatedRescuers = [...new Set([...existingRescuers, ...selectedRescuers])];
+      
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
-        rescueUnit: selectedVolunteer,
+        rescueUnits: updatedRescuers, // Changed to array for multiple rescuers
         status: 'responding',
       });
+      
       // Simulate sending notification/message
-      setMessage('Rescuer dispatched and user notified.');
+      setMessage(`${selectedRescuers.length} rescuer(s) dispatched and user notified.`);
       setTimeout(() => setMessage(''), 3000);
       setSelectedReport(null);
-      setSelectedVolunteer('');
+      setSelectedRescuers([]);
       fetchSosReports();
     } catch (err) {
-      setMessage('Failed to assign rescuer.');
+      setMessage('Failed to assign rescuers.');
       setTimeout(() => setMessage(''), 3000);
     }
     setAssigning(false);
+  };
+
+  // Remove a rescuer from the assignment
+  const handleRemoveRescuer = async (rescuerId) => {
+    if (!selectedReport) return;
+    try {
+      const updatedRescuers = (selectedReport.rescueUnits || []).filter(id => id !== rescuerId);
+      await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
+        rescueUnits: updatedRescuers,
+        status: updatedRescuers.length > 0 ? 'responding' : 'pending',
+      });
+      setMessage('Rescuer removed from assignment.');
+      setTimeout(() => setMessage(''), 3000);
+      fetchSosReports();
+    } catch (err) {
+      setMessage('Failed to remove rescuer.');
+      setTimeout(() => setMessage(''), 3000);
+    }
   };
 
   // Mark as safe
@@ -169,6 +214,12 @@ const SosPage = () => {
       setMessage('Failed to mark as safe.');
       setTimeout(() => setMessage(''), 3000);
     }
+  };
+
+  // Get rescuer name by ID
+  const getRescuerName = (rescuerId) => {
+    const rescuer = rescuers.find(r => r.id === rescuerId);
+    return rescuer ? `${rescuer.firstName} ${rescuer.lastName}` : 'Unknown Rescuer';
   };
 
   return (
@@ -206,39 +257,73 @@ const SosPage = () => {
                       position={{ lat: selectedReport.location.latitude, lng: selectedReport.location.longitude }}
                       onCloseClick={() => setSelectedReport(null)}
                     >
-                      <div className="w-64">
+                      <div className="w-80 max-h-96 overflow-y-auto">
                         <h3 className="font-bold text-lg mb-2">SOS Details</h3>
-                        <p><span className="font-medium">Urgency Score:</span> {selectedReport.urgencyScore}</p>
-                        <p><span className="font-medium">Danger Level:</span> {selectedReport.dangerLevel}</p>
-                        <p><span className="font-medium">People:</span> {selectedReport.numberOfPeople}</p>
-                        <p><span className="font-medium">Status:</span> {selectedReport.status}</p>
-                        <p><span className="font-medium">Notes:</span> {selectedReport.notes}</p>
+                        <p><span className="font-medium">Urgency Score:</span> {selectedReport.urgencyScore || 'N/A'}</p>
+                        <p><span className="font-medium">Danger Level:</span> {getFormValue(selectedReport, 'dangerLevel')}</p>
+                        <p><span className="font-medium">People:</span> {getFormValue(selectedReport, 'numberOfPeople')}</p>
+                        <p><span className="font-medium">Status:</span> {selectedReport.status || 'N/A'}</p>
+                        <p><span className="font-medium">Notes:</span> {getFormValue(selectedReport, 'notes')}</p>
+                        {selectedReport.formAnswers?.natureOfEmergency && (
+                          <p><span className="font-medium">Emergency Type:</span> {Array.isArray(selectedReport.formAnswers.natureOfEmergency) 
+                            ? selectedReport.formAnswers.natureOfEmergency.join(', ') 
+                            : selectedReport.formAnswers.natureOfEmergency}</p>
+                        )}
+                        {selectedReport.formAnswers?.canEvacuate && (
+                          <p><span className="font-medium">Can Evacuate:</span> {selectedReport.formAnswers.canEvacuate}</p>
+                        )}
                         {selectedReport.distance && (
                           <p><span className="font-medium">Distance:</span> {selectedReport.distance.toFixed(2)} km</p>
                         )}
-                        <div className="mt-2">
-                          {selectedReport.status === 'pending' && (
-                            <>
-                              <label className="block mb-1 font-medium">Assign Rescuer</label>
-                              <select
-                                className="w-full border rounded p-2 mb-2"
-                                value={selectedVolunteer}
-                                onChange={e => setSelectedVolunteer(e.target.value)}
-                              >
-                                <option value="">Select Volunteer</option>
-                                {volunteers.map(v => (
-                                  <option key={v.id} value={v.id}>{v.firstName} {v.lastName}</option>
-                                ))}
-                              </select>
-                              <button
-                                className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                onClick={handleAssignRescuer}
-                                disabled={assigning || !selectedVolunteer}
-                              >
-                                {assigning ? 'Assigning...' : 'Dispatch Rescuer'}
-                              </button>
-                            </>
-                          )}
+                        
+                        {/* Show currently assigned rescuers */}
+                        {selectedReport.rescueUnits && selectedReport.rescueUnits.length > 0 && (
+                          <div className="mt-3">
+                            <p className="font-medium mb-2">Assigned Rescuers:</p>
+                            <div className="space-y-1">
+                              {selectedReport.rescueUnits.map(rescuerId => (
+                                <div key={rescuerId} className="flex justify-between items-center bg-green-100 p-2 rounded">
+                                  <span className="text-sm">{getRescuerName(rescuerId)}</span>
+                                  <button
+                                    className="text-red-600 hover:text-red-800 text-xs"
+                                    onClick={() => handleRemoveRescuer(rescuerId)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-3">
+                          {/* Always show rescuer assignment interface */}
+                          <label className="block mb-2 font-medium">Assign Additional Rescuers</label>
+                          <div className="max-h-32 overflow-y-auto border rounded p-2 mb-2">
+                            {rescuers.map(rescuer => (
+                              <label key={rescuer.id} className="flex items-center mb-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRescuers.includes(rescuer.id)}
+                                  onChange={() => handleRescuerSelection(rescuer.id)}
+                                  disabled={selectedReport.rescueUnits?.includes(rescuer.id)}
+                                  className="mr-2"
+                                />
+                                <span className={`text-sm ${selectedReport.rescueUnits?.includes(rescuer.id) ? 'text-gray-400' : ''}`}>
+                                  {rescuer.firstName} {rescuer.lastName}
+                                  {selectedReport.rescueUnits?.includes(rescuer.id) && ' (Already Assigned)'}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                          <button
+                            className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                            onClick={handleAssignRescuers}
+                            disabled={assigning || !selectedRescuers.length}
+                          >
+                            {assigning ? 'Assigning...' : `Dispatch ${selectedRescuers.length} Rescuer(s)`}
+                          </button>
+
                           {selectedReport.status === 'responding' && (
                             <button
                               className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 mt-2"
@@ -305,9 +390,14 @@ const SosPage = () => {
                               }
                             </span>
                             <span className="text-[#111418]">
-                              {report.numberOfPeople} people, Danger Level: {report.dangerLevel}
+                              {getFormValue(report, 'numberOfPeople')} people, Danger Level: {getFormValue(report, 'dangerLevel')}
                             </span>
                             <span className="text-[#60758a] text-xs">Status: {report.status}</span>
+                            {report.rescueUnits && report.rescueUnits.length > 0 && (
+                              <span className="text-[#60758a] text-xs">
+                                {report.rescueUnits.length} rescuer(s) assigned
+                              </span>
+                            )}
                             {filterType === 'urgency' && report.distance && (
                               <span className="text-[#60758a] text-xs">
                                 Distance: {report.distance.toFixed(2)} km
