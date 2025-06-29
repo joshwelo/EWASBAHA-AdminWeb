@@ -34,23 +34,28 @@ const EvacuationCenter = () => {
 
   const [map, setMap] = useState(null);
   const [centers, setCenters] = useState([]);
+  const [filteredCenters, setFilteredCenters] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
 
   // Fetch evacuation centers
   const fetchCenters = async () => {
     setLoading(true);
     const querySnapshot = await getDocs(collection(db, 'evacuationCenter'));
-    setCenters(querySnapshot.docs.map(doc => {
+    const centersData = querySnapshot.docs.map(doc => {
       const data = doc.data();
       // Prefer top-level latitude/longitude, fallback to coordinates map
       const latitude = data.latitude ?? data.coordinates?.latitude ?? '';
       const longitude = data.longitude ?? data.coordinates?.longitude ?? '';
       return { id: doc.id, ...data, latitude, longitude };
-    }));
+    });
+    setCenters(centersData);
+    setFilteredCenters(centersData);
     setLoading(false);
   };
 
@@ -58,15 +63,38 @@ const EvacuationCenter = () => {
     fetchCenters();
   }, []);
 
-  // Open modal for adding new center
+  // Search functionality
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredCenters(centers);
+    } else {
+      const filtered = centers.filter(center => 
+        center.centerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        center.campManager?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        center.contactNum?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredCenters(filtered);
+    }
+  }, [searchQuery, centers]);
+
+  // Open form for adding new center
   const handleAddNew = () => {
     setForm(initialForm);
     setEditingId(null);
-    setIsModalOpen(true);
+    setShowAddForm(true);
   };
 
-  // Map marker click to edit
-  const handleMarkerClick = (center) => {
+  // Zoom to center location only
+  const handleCenterClick = (center) => {
+    // Zoom to the center location
+    if (map && center.latitude && center.longitude) {
+      map.panTo({ lat: center.latitude, lng: center.longitude });
+      map.setZoom(16);
+    }
+  };
+
+  // Open edit modal for center
+  const handleEditCenter = (center) => {
     setForm({
       centerName: center.centerName || '',
       campManager: center.campManager || '',
@@ -81,16 +109,21 @@ const EvacuationCenter = () => {
     setIsModalOpen(true);
   };
 
+  // Map marker click to edit
+  const handleMarkerClick = (center) => {
+    handleEditCenter(center);
+  };
+
   // Map click to set coordinates
   const onMapClick = useCallback((event) => {
-    if (isModalOpen) {
+    if (isModalOpen || showAddForm) {
       setForm((prev) => ({
         ...prev,
         latitude: event.latLng.lat(),
         longitude: event.latLng.lng(),
       }));
     } else {
-      // Set marker for new location when not in modal
+      // Set marker for new location when not in modal or form
       setSelectedMarker({
         lat: event.latLng.lat(),
         lng: event.latLng.lng()
@@ -101,7 +134,7 @@ const EvacuationCenter = () => {
         longitude: event.latLng.lng(),
       }));
     }
-  }, [isModalOpen]);
+  }, [isModalOpen, showAddForm]);
 
   // Add or update evacuation center
   const handleSubmit = async (e) => {
@@ -124,6 +157,7 @@ const EvacuationCenter = () => {
       setForm(initialForm);
       setEditingId(null);
       setIsModalOpen(false);
+      setShowAddForm(false);
       setSelectedMarker(null);
       fetchCenters();
     } catch (err) {
@@ -143,6 +177,7 @@ const EvacuationCenter = () => {
         setForm(initialForm);
         setEditingId(null);
         setIsModalOpen(false);
+        setShowAddForm(false);
       }
     } catch (err) {
       alert('Error deleting evacuation center: ' + err.message);
@@ -150,11 +185,22 @@ const EvacuationCenter = () => {
     setLoading(false);
   };
 
-  // Close modal
+  // Close modal and form
   const closeModal = () => {
     setIsModalOpen(false);
     setForm(initialForm);
     setEditingId(null);
+  };
+
+  const closeAddForm = () => {
+    setShowAddForm(false);
+    setForm(initialForm);
+    setSelectedMarker(null);
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('');
   };
 
   const onLoad = useCallback(function callback(map) {
@@ -198,7 +244,7 @@ const EvacuationCenter = () => {
                   onClick={onMapClick}
                 >
                   {/* Existing evacuation centers */}
-                  {centers.map((center) => (
+                  {filteredCenters.map((center) => (
                     center.latitude && center.longitude && (
                       <Marker
                         key={center.id}
@@ -214,7 +260,7 @@ const EvacuationCenter = () => {
                   ))}
                   
                   {/* Temporary marker for new location */}
-                  {selectedMarker && !isModalOpen && (
+                  {selectedMarker && !isModalOpen && !showAddForm && (
                     <Marker
                       position={selectedMarker}
                       icon={{ 
@@ -225,8 +271,8 @@ const EvacuationCenter = () => {
                     />
                   )}
                   
-                  {/* Preview marker when editing coordinates in modal */}
-                  {form.latitude && form.longitude && isModalOpen && (
+                  {/* Preview marker when editing coordinates in modal or form */}
+                  {form.latitude && form.longitude && (isModalOpen || showAddForm) && (
                     <Marker
                       position={{ lat: Number(form.latitude), lng: Number(form.longitude) }}
                       icon={{ 
@@ -241,52 +287,236 @@ const EvacuationCenter = () => {
             </div>
             
             <div>
-              <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm">
-                <p className="text-[#111418] text-base font-medium leading-normal mb-4">Evacuation Centers ({centers.length})</p>
-                <div className="max-h-96 overflow-y-auto">
-                  {centers.length === 0 && (
-                    <p className="text-gray-500 text-sm text-center py-4">No centers found. Click "Add New Center" to get started.</p>
-                  )}
-                  {centers.map(center => (
-                    <div key={center.id} className="flex flex-col border-b py-3 last:border-b-0 hover:bg-gray-50 rounded p-2">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-gray-800">{center.centerName}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Manager: {center.campManager}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Contact: {center.contactNum}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Capacity: {center.capacityFam || 0} families, {center.capacityInd || 0} individuals
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Classrooms: {center.numClassroom || 0}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-1">
-                            ({center.latitude ? center.latitude.toFixed(4) : 'N/A'}, {center.longitude ? center.longitude.toFixed(4) : 'N/A'})
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1 ml-2">
-                          <button 
-                            className="text-blue-600 hover:underline text-xs px-2 py-1 rounded hover:bg-blue-50" 
-                            onClick={() => handleMarkerClick(center)}
-                          >
-                            Edit
-                          </button>
-                          <button 
-                            className="text-red-600 hover:underline text-xs px-2 py-1 rounded hover:bg-red-50" 
-                            onClick={() => handleDelete(center.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
+              {/* Add Form */}
+              {showAddForm ? (
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm mb-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Add New Evacuation Center</h3>
+                    <button 
+                      onClick={closeAddForm}
+                      className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Center Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter center name" 
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                        value={form.centerName} 
+                        onChange={e => setForm({ ...form, centerName: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Camp Manager</label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter manager name" 
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                        value={form.campManager} 
+                        onChange={e => setForm({ ...form, campManager: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Contact Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter contact number" 
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                        value={form.contactNum} 
+                        onChange={e => setForm({ ...form, contactNum: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Family Capacity</label>
+                        <input 
+                          type="number" 
+                          placeholder="0" 
+                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                          value={form.capacityFam} 
+                          onChange={e => setForm({ ...form, capacityFam: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Individual Capacity</label>
+                        <input 
+                          type="number" 
+                          placeholder="0" 
+                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                          value={form.capacityInd} 
+                          onChange={e => setForm({ ...form, capacityInd: e.target.value })} 
+                          required 
+                        />
                       </div>
                     </div>
-                  ))}
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Number of Classrooms</label>
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                        value={form.numClassroom} 
+                        onChange={e => setForm({ ...form, numClassroom: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Latitude</label>
+                        <input 
+                          type="number" 
+                          step="any" 
+                          placeholder="Click on map" 
+                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                          value={form.latitude} 
+                          onChange={e => setForm({ ...form, latitude: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Longitude</label>
+                        <input 
+                          type="number" 
+                          step="any" 
+                          placeholder="Click on map" 
+                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-5000" 
+                          value={form.longitude} 
+                          onChange={e => setForm({ ...form, longitude: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                    </div>
+                    
+                    <p className="text-xs text-gray-500">
+                      Click on the map to set coordinates
+                    </p>
+                    
+                    <div className="flex gap-2 pt-2">
+                      <button 
+                        type="submit" 
+                        className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none disabled:opacity-50" 
+                        disabled={loading}
+                      >
+                        {loading ? 'Adding...' : 'Add Center'}
+                      </button>
+                      <button 
+                        type="button" 
+                        className="flex-1 px-3 py-1.5 text-xs text-gray-700 bg-gray-200 rounded hover:bg-gray-300 focus:outline-none" 
+                        onClick={closeAddForm}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm">
+                  <div className="flex justify-between items-center mb-4">
+                    <p className="text-[#111418] text-base font-medium leading-normal">Evacuation Centers ({filteredCenters.length})</p>
+                  </div>
+                  
+                  {/* Search Bar */}
+                  <div className="mb-4">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search centers..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                      />
+                      {searchQuery && (
+                        <button
+                          onClick={clearSearch}
+                          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    {searchQuery && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {filteredCenters.length} of {centers.length} centers shown
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto">
+                    {filteredCenters.length === 0 && searchQuery && (
+                      <p className="text-gray-500 text-sm text-center py-4">
+                        No centers found matching "{searchQuery}". 
+                        <button 
+                          onClick={clearSearch} 
+                          className="text-blue-600 hover:underline ml-1"
+                        >
+                          Clear search
+                        </button>
+                      </p>
+                    )}
+                    {filteredCenters.length === 0 && !searchQuery && (
+                      <p className="text-gray-500 text-sm text-center py-4">No centers found. Click "Add New Center" to get started.</p>
+                    )}
+                    {filteredCenters.map(center => (
+                      <div key={center.id} className="flex flex-col border-b py-3 last:border-b-0 hover:bg-gray-50 rounded p-2">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 cursor-pointer" onClick={() => handleCenterClick(center)}>
+                            <div className="font-semibold text-sm text-gray-800 hover:text-blue-600">{center.centerName}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Manager: {center.campManager}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Contact: {center.contactNum}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Capacity: {center.capacityFam || 0} families, {center.capacityInd || 0} individuals
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Classrooms: {center.numClassroom || 0}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              ({center.latitude ? center.latitude.toFixed(4) : 'N/A'}, {center.longitude ? center.longitude.toFixed(4) : 'N/A'})
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1 ml-2">
+                            <button 
+                              className="text-blue-600 hover:underline text-xs px-2 py-1 rounded hover:bg-blue-50" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditCenter(center);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button 
+                              className="text-red-600 hover:underline text-xs px-2 py-1 rounded hover:bg-red-50" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(center.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

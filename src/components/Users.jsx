@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
@@ -17,6 +17,12 @@ const Users = () => {
   const [isApplicationModalOpen, setApplicationModalOpen] = useState(false);
   const [applicationLoading, setApplicationLoading] = useState(false);
   const [applicationError, setApplicationError] = useState('');
+  
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [userTypeFilter, setUserTypeFilter] = useState('');
+  const [verificationFilter, setVerificationFilter] = useState('');
+  const [applicationStatusFilter, setApplicationStatusFilter] = useState('');
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -35,6 +41,53 @@ const Users = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // Filtered users
+  const filteredUsers = useMemo(() => {
+    let filtered = users;
+
+    // Apply search filter
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(user => {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+        const email = (user.email || '').toLowerCase();
+        return fullName.includes(lowerSearchTerm) || email.includes(lowerSearchTerm);
+      });
+    }
+
+    // Apply user type filter
+    if (userTypeFilter) {
+      filtered = filtered.filter(user => user.userType === userTypeFilter);
+    }
+
+    // Apply verification filter
+    if (verificationFilter) {
+      if (verificationFilter === 'verified') {
+        filtered = filtered.filter(user => user.isVerified === true);
+      } else if (verificationFilter === 'not verified') {
+        filtered = filtered.filter(user => user.isVerified === false);
+      }
+    }
+
+    // Apply application status filter
+    if (applicationStatusFilter) {
+      if (applicationStatusFilter === 'none') {
+        filtered = filtered.filter(user => !user.applicationStatus || user.applicationStatus === 'none');
+      } else {
+        filtered = filtered.filter(user => user.applicationStatus === applicationStatusFilter);
+      }
+    }
+
+    return filtered;
+  }, [users, searchTerm, userTypeFilter, verificationFilter, applicationStatusFilter]);
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setUserTypeFilter('');
+    setVerificationFilter('');
+    setApplicationStatusFilter('');
+  };
 
   const handleAddUser = () => {
     setAddModalOpen(true);
@@ -103,9 +156,10 @@ const Users = () => {
           </div>
         </div>
 
-        {/* Search */}
+        {/* Search and Filters */}
         <div className="px-6 pb-6">
           <div className="flex flex-col gap-4">
+            {/* Search Bar */}
             <label className="flex flex-col min-w-40 h-12 w-full">
               <div className="flex w-full flex-1 items-stretch rounded-lg h-full">
                 <div className="text-[#60758a] flex border-none bg-[#f0f2f5] items-center justify-center pl-4 rounded-l-lg border-r-0">
@@ -114,11 +168,90 @@ const Users = () => {
                   </svg>
                 </div>
                 <input
-                  placeholder="Search users"
+                  placeholder="Search by name or email"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#111418] focus:outline-0 focus:ring-0 border-none bg-[#f0f2f5] focus:border-none h-full placeholder:text-[#60758a] px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal"
                 />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="text-[#60758a] flex border-none bg-[#f0f2f5] items-center justify-center pr-4 rounded-r-lg border-l-0"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </label>
+
+            {/* Filter Dropdowns */}
+            <div className="flex flex-wrap gap-4">
+              {/* User Type Filter */}
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-[#111418] mb-1">User Type</label>
+                <select
+                  value={userTypeFilter}
+                  onChange={(e) => setUserTypeFilter(e.target.value)}
+                  className="h-10 px-3 rounded-lg border border-[#dbe0e6] bg-white text-[#111418] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Types</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="rescuer">Rescuer</option>
+                  <option value="user">User</option>
+                </select>
+              </div>
+
+              {/* Verification Filter */}
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-[#111418] mb-1">Verification</label>
+                <select
+                  value={verificationFilter}
+                  onChange={(e) => setVerificationFilter(e.target.value)}
+                  className="h-10 px-3 rounded-lg border border-[#dbe0e6] bg-white text-[#111418] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Status</option>
+                  <option value="verified">Verified</option>
+                  <option value="not verified">Not Verified</option>
+                </select>
+              </div>
+
+              {/* Application Status Filter */}
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-[#111418] mb-1">Application Status</label>
+                <select
+                  value={applicationStatusFilter}
+                  onChange={(e) => setApplicationStatusFilter(e.target.value)}
+                  className="h-10 px-3 rounded-lg border border-[#dbe0e6] bg-white text-[#111418] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Status</option>
+                  <option value="approved">Approved</option>
+                  <option value="pending">Pending</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(searchTerm || userTypeFilter || verificationFilter || applicationStatusFilter) && (
+                <div className="flex flex-col justify-end">
+                  <button
+                    onClick={clearAllFilters}
+                    className="h-10 px-4 rounded-lg border border-[#dbe0e6] bg-white text-[#60758a] text-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    Clear All Filters
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Results Summary */}
+            {(searchTerm || userTypeFilter || verificationFilter || applicationStatusFilter) && (
+              <p className="text-sm text-[#60758a]">
+                Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+                {searchTerm && ` matching "${searchTerm}"`}
+              </p>
+            )}
           </div>
         </div>
 
@@ -154,8 +287,16 @@ const Users = () => {
                     <tr>
                       <td colSpan="6" className="text-center py-4">Loading...</td>
                     </tr>
+                  ) : filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="text-center py-8 text-[#60758a]">
+                        {searchTerm || userTypeFilter || verificationFilter || applicationStatusFilter 
+                          ? 'No users found matching your filters.' 
+                          : 'No users found.'}
+                      </td>
+                    </tr>
                   ) : (
-                    users.map((user) => (
+                    filteredUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
                           {user.firstName} {user.lastName}
@@ -178,21 +319,21 @@ const Users = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <span
-  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-    user.applicationStatus === 'approved'
-      ? 'bg-green-100 text-green-800'
-      : user.applicationStatus === 'rejected'
-        ? 'bg-red-100 text-red-800'
-        : user.applicationStatus === 'pending'
-          ? 'bg-yellow-100 text-yellow-800'
-          : 'bg-gray-100 text-gray-800'
-  }`}
->
-  {user.applicationStatus
-    ? user.applicationStatus.charAt(0).toUpperCase() + user.applicationStatus.slice(1)
-    : 'None'}
-</span>
+                          <span
+                            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                              user.applicationStatus === 'approved'
+                                ? 'bg-green-100 text-green-800'
+                                : user.applicationStatus === 'rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : user.applicationStatus === 'pending'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {user.applicationStatus
+                              ? user.applicationStatus.charAt(0).toUpperCase() + user.applicationStatus.slice(1)
+                              : 'None'}
+                          </span>
 
                           <button
                             className="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-xs font-medium hover:bg-blue-600"
