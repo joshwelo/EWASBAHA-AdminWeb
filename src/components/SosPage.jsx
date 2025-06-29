@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
 
@@ -24,10 +24,13 @@ const SosPage = () => {
   const [map, setMap] = useState(null);
   const [sosReports, setSosReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
+  const [resolvedReports, setResolvedReports] = useState([]);
+  const [rescuers, setRescuers] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
-  const [selectedVolunteer, setSelectedVolunteer] = useState('');
+  const [selectedRescuers, setSelectedRescuers] = useState([]);
+  const [selectedVolunteers, setSelectedVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [filterType, setFilterType] = useState('urgency');
@@ -117,16 +120,22 @@ const SosPage = () => {
     setResolvedReports(resolved);
   }, [sosReports, filterType, userLocation]);
 
-  // Fetch rescuers instead of volunteers
+  // Fetch rescuers and volunteers
   const fetchRescuers = async () => {
     const q = query(collection(db, 'users'), where('userType', '==', 'rescuer'));
     const snapshot = await getDocs(q);
     setRescuers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
+  const fetchVolunteers = async () => {
+    const q = query(collection(db, 'users'), where('userType', '==', 'volunteer'));
+    const snapshot = await getDocs(q);
+    setVolunteers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  };
 
   useEffect(() => {
     fetchSosReports();
     fetchRescuers();
+    fetchVolunteers();
     getUserLocation();
   }, []);
 
@@ -153,6 +162,7 @@ const SosPage = () => {
       setSelectedReport(report);
       // Reset selected rescuers when switching reports
       setSelectedRescuers([]);
+      setSelectedVolunteers([]);
     }
   };
 
@@ -169,32 +179,41 @@ const SosPage = () => {
     });
   };
 
-  // Assign multiple rescuers
-  const handleAssignRescuers = async () => {
-    if (!selectedRescuers.length || !selectedReport) return;
+  // Handle volunteer selection (multiple selection)
+  const handleVolunteerSelection = (volunteerId) => {
+    setSelectedVolunteers(prev => {
+      if (prev.includes(volunteerId)) {
+        return prev.filter(id => id !== volunteerId);
+      } else {
+        return [...prev, volunteerId];
+      }
+    });
+  };
+
+  // Assign multiple rescuers and volunteers
+  const handleAssignUnits = async () => {
+    if ((!selectedRescuers.length && !selectedVolunteers.length) || !selectedReport) return;
     setAssigning(true);
     try {
-      // Get existing rescuer units or initialize as empty array
+      // Get existing units or initialize as empty arrays
       const existingRescuers = selectedReport.rescueUnits || [];
-      
-      // Combine existing rescuers with newly selected ones (avoid duplicates)
+      const existingVolunteers = selectedReport.volunteerUnits || [];
+      // Combine existing and newly selected, avoid duplicates
       const updatedRescuers = [...new Set([...existingRescuers, ...selectedRescuers])];
-      
+      const updatedVolunteers = [...new Set([...existingVolunteers, ...selectedVolunteers])];
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
-        rescueUnits: updatedRescuers, // Changed to array for multiple rescuers
+        rescueUnits: updatedRescuers,
+        volunteerUnits: updatedVolunteers,
         status: 'responding',
       });
-      
-      // Simulate sending notification/message
-      setMessage(`${selectedRescuers.length} rescuer(s) dispatched and user notified.`);
+      setMessage(`${selectedRescuers.length} rescuer(s) and ${selectedVolunteers.length} volunteer(s) dispatched and user notified.`);
       setTimeout(() => setMessage(''), 3000);
       setSelectedReport(null);
       setSelectedRescuers([]);
-      setSelectedRescuers([]);
+      setSelectedVolunteers([]);
       fetchSosReports();
     } catch (err) {
-      setMessage('Failed to assign rescuers.');
-      setMessage('Failed to assign rescuers.');
+      setMessage('Failed to assign units.');
       setTimeout(() => setMessage(''), 3000);
     }
     setAssigning(false);
@@ -212,26 +231,40 @@ const SosPage = () => {
       setMessage('Rescuer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports();
+      // Fetch updated report and update selectedReport
+      const updatedDoc = await getDocs(query(collection(db, 'sos_reports'), where('__name__', '==', selectedReport.id)));
+      if (!updatedDoc.empty) {
+        setSelectedReport({ id: selectedReport.id, ...updatedDoc.docs[0].data() });
+      } else {
+        setSelectedReport(null);
+      }
     } catch (err) {
       setMessage('Failed to remove rescuer.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
 
-  // Remove a rescuer from the assignment
-  const handleRemoveRescuer = async (rescuerId) => {
+  // Remove a volunteer from the assignment
+  const handleRemoveVolunteer = async (volunteerId) => {
     if (!selectedReport) return;
     try {
-      const updatedRescuers = (selectedReport.rescueUnits || []).filter(id => id !== rescuerId);
+      const updatedVolunteers = (selectedReport.volunteerUnits || []).filter(id => id !== volunteerId);
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
-        rescueUnits: updatedRescuers,
-        status: updatedRescuers.length > 0 ? 'responding' : 'pending',
+        volunteerUnits: updatedVolunteers,
+        status: (selectedReport.rescueUnits?.length > 0 || updatedVolunteers.length > 0) ? 'responding' : 'pending',
       });
-      setMessage('Rescuer removed from assignment.');
+      setMessage('Volunteer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports();
+      // Fetch updated report and update selectedReport
+      const updatedDoc = await getDocs(query(collection(db, 'sos_reports'), where('__name__', '==', selectedReport.id)));
+      if (!updatedDoc.empty) {
+        setSelectedReport({ id: selectedReport.id, ...updatedDoc.docs[0].data() });
+      } else {
+        setSelectedReport(null);
+      }
     } catch (err) {
-      setMessage('Failed to remove rescuer.');
+      setMessage('Failed to remove volunteer.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -256,6 +289,12 @@ const SosPage = () => {
   const getRescuerName = (rescuerId) => {
     const rescuer = rescuers.find(r => r.id === rescuerId);
     return rescuer ? `${rescuer.firstName} ${rescuer.lastName}` : 'Unknown Rescuer';
+  };
+
+  // Get volunteer name by ID
+  const getVolunteerName = (volunteerId) => {
+    const volunteer = volunteers.find(v => v.id === volunteerId);
+    return volunteer ? `${volunteer.firstName} ${volunteer.lastName}` : 'Unknown Volunteer';
   };
 
   // Format date for display
@@ -308,7 +347,7 @@ const SosPage = () => {
                       position={{ lat: selectedReport.location.latitude, lng: selectedReport.location.longitude }}
                       onCloseClick={() => setSelectedReport(null)}
                     >
-                      <div className="w-80 max-h-96 overflow-y-auto">
+                      <div className="w-80">
                         <h3 className="font-bold text-lg mb-2">SOS Details</h3>
                         <p><span className="font-medium">Urgency Score:</span> {selectedReport.urgencyScore || 'N/A'}</p>
                         <p><span className="font-medium">Danger Level:</span> {getFormValue(selectedReport, 'dangerLevel')}</p>
@@ -346,33 +385,72 @@ const SosPage = () => {
                             </div>
                           </div>
                         )}
+                        {/* Show currently assigned volunteers */}
+                        {selectedReport.volunteerUnits && selectedReport.volunteerUnits.length > 0 && (
+                          <div className="mt-3">
+                            <p className="font-medium mb-2">Assigned Volunteers:</p>
+                            <div className="space-y-1">
+                              {selectedReport.volunteerUnits.map(volunteerId => (
+                                <div key={volunteerId} className="flex justify-between items-center bg-blue-100 p-2 rounded">
+                                  <span className="text-sm">{getVolunteerName(volunteerId)}</span>
+                                  <button
+                                    className="text-red-600 hover:text-red-800 text-xs"
+                                    onClick={() => handleRemoveVolunteer(volunteerId)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="mt-3">
-                          {/* Always show rescuer assignment interface */}
-                          <label className="block mb-2 font-medium">Assign Additional Rescuers</label>
-                          <div className="max-h-32 overflow-y-auto border rounded p-2 mb-2">
-                            {rescuers.map(rescuer => (
-                              <label key={rescuer.id} className="flex items-center mb-1">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedRescuers.includes(rescuer.id)}
-                                  onChange={() => handleRescuerSelection(rescuer.id)}
-                                  disabled={selectedReport.rescueUnits?.includes(rescuer.id)}
-                                  className="mr-2"
-                                />
-                                <span className={`text-sm ${selectedReport.rescueUnits?.includes(rescuer.id) ? 'text-gray-400' : ''}`}>
-                                  {rescuer.firstName} {rescuer.lastName}
-                                  {selectedReport.rescueUnits?.includes(rescuer.id) && ' (Already Assigned)'}
-                                </span>
-                              </label>
-                            ))}
+                          <label className="block mb-2 font-medium">Assign Additional Units</label>
+                          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border rounded p-2 mb-2">
+                            <div>
+                              <p className="font-semibold text-green-700 mb-1">Rescuers</p>
+                              {rescuers.map(rescuer => (
+                                <label key={rescuer.id} className="flex items-center mb-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedRescuers.includes(rescuer.id)}
+                                    onChange={() => handleRescuerSelection(rescuer.id)}
+                                    disabled={selectedReport.rescueUnits?.includes(rescuer.id)}
+                                    className="mr-2"
+                                  />
+                                  <span className={`text-sm ${selectedReport.rescueUnits?.includes(rescuer.id) ? 'text-gray-400' : ''}`}>
+                                    {rescuer.firstName} {rescuer.lastName}
+                                    {selectedReport.rescueUnits?.includes(rescuer.id) && ' (Already Assigned)'}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-blue-700 mb-1">Volunteers</p>
+                              {volunteers.map(volunteer => (
+                                <label key={volunteer.id} className="flex items-center mb-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedVolunteers.includes(volunteer.id)}
+                                    onChange={() => handleVolunteerSelection(volunteer.id)}
+                                    disabled={selectedReport.volunteerUnits?.includes(volunteer.id)}
+                                    className="mr-2"
+                                  />
+                                  <span className={`text-sm ${selectedReport.volunteerUnits?.includes(volunteer.id) ? 'text-gray-400' : ''}`}>
+                                    {volunteer.firstName} {volunteer.lastName}
+                                    {selectedReport.volunteerUnits?.includes(volunteer.id) && ' (Already Assigned)'}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
                           <button
                             className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
-                            onClick={handleAssignRescuers}
-                            disabled={assigning || !selectedRescuers.length}
+                            onClick={handleAssignUnits}
+                            disabled={assigning || (!selectedRescuers.length && !selectedVolunteers.length)}
                           >
-                            {assigning ? 'Assigning...' : `Dispatch ${selectedRescuers.length} Rescuer(s)`}
+                            {assigning ? 'Assigning...' : `Dispatch ${selectedRescuers.length + selectedVolunteers.length} Unit(s)`}
                           </button>
 
                           {selectedReport.status === 'responding' && (
@@ -535,6 +613,18 @@ const SosPage = () => {
                                 </div>
                               </div>
                             )}
+                            {report.volunteerUnits && report.volunteerUnits.length > 0 && (
+                              <div className="mt-2">
+                                <p className="font-medium">Volunteers Involved:</p>
+                                <div className="mt-1 space-y-1">
+                                  {report.volunteerUnits.map(volunteerId => (
+                                    <span key={volunteerId} className="inline-block bg-blue-200 text-blue-800 px-2 py-1 rounded text-xs mr-1">
+                                      {getVolunteerName(volunteerId)}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                         {getFormValue(report, 'notes') !== 'N/A' && (
@@ -563,4 +653,4 @@ const SosPage = () => {
   );
 };
 
-export default SosPage; 
+export default SosPage;
