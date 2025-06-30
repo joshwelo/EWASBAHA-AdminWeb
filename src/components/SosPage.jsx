@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { collection, getDocs, updateDoc, doc, query, where, arrayUnion } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
 
@@ -38,6 +38,8 @@ const PersonnelSection = ({ title, personnel, getDetails, handleRemove, color, s
       <div className="space-y-2">
         {personnel.map(id => {
           const details = getDetails(id);
+          if (!details) return null;
+
           const name = showSkills ? details.name : details;
           const skills = showSkills ? details.choices : [];
           
@@ -80,8 +82,10 @@ const TabButton = ({ active, onClick, children }) => (
   </button>
 );
 
-const PersonnelItem = ({ id, name, status, skills, isSelected, isAssigned, onSelect }) => {
+const PersonnelItem = ({ id, name, status, skills, isSelected, isAssigned, onSelect, selectionType = 'checkbox' }) => {
   if (isAssigned) return null;
+
+  const iconClass = selectionType === 'radio' ? 'rounded-full' : 'rounded';
   
   return (
     <div
@@ -105,7 +109,7 @@ const PersonnelItem = ({ id, name, status, skills, isSelected, isAssigned, onSel
           </div>
         )}
       </div>
-      <div className={`w-5 h-5 border-2 rounded flex-shrink-0 ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white'}`} />
+      <div className={`w-5 h-5 border-2 rounded flex-shrink-0 ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white'} ${iconClass}`} />
     </div>
   );
 };
@@ -133,7 +137,7 @@ const SosPage = () => {
   const [users, setUsers] = useState([]); // Add users state to get volunteer names
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
-  const [selectedRescuers, setSelectedRescuers] = useState([]);
+  const [selectedRescuer, setSelectedRescuer] = useState(null);
   const [selectedVolunteers, setSelectedVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -274,22 +278,14 @@ const SosPage = () => {
       map.setZoom(15);
       setSelectedReport(report);
       // Reset selected rescuers when switching reports
-      setSelectedRescuers([]);
+      setSelectedRescuer(null);
       setSelectedVolunteers([]);
     }
   };
 
-  // Handle rescuer selection (multiple selection)
+  // Handle rescuer selection (single selection)
   const handleRescuerSelection = (rescuerId) => {
-    setSelectedRescuers(prev => {
-      if (prev.includes(rescuerId)) {
-        // Remove if already selected
-        return prev.filter(id => id !== rescuerId);
-      } else {
-        // Add if not selected
-        return [...prev, rescuerId];
-      }
-    });
+    setSelectedRescuer(prev => (prev === rescuerId ? null : rescuerId));
   };
 
   // Handle volunteer selection (multiple selection)
@@ -305,24 +301,32 @@ const SosPage = () => {
 
   // Assign multiple rescuers and volunteers
   const handleAssignUnits = async () => {
-    if ((!selectedRescuers.length && !selectedVolunteers.length) || !selectedReport) return;
+    if ((!selectedRescuer && !selectedVolunteers.length) || !selectedReport) return;
     setAssigning(true);
     try {
       // Get existing units or initialize as empty arrays
       const existingRescuers = selectedReport.rescueUnits || [];
       const existingVolunteers = selectedReport.volunteerUnits || [];
-      // Combine existing and newly selected, avoid duplicates
-      const updatedRescuers = [...new Set([...existingRescuers, ...selectedRescuers])];
+
+      // If a new rescuer is selected, it replaces any existing rescuer(s).
+      // Otherwise, keep the existing assigned rescuers.
+      const updatedRescuers = selectedRescuer ? [selectedRescuer] : existingRescuers;
+      
       const updatedVolunteers = [...new Set([...existingVolunteers, ...selectedVolunteers])];
+      
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
         rescueUnits: updatedRescuers,
         volunteerUnits: updatedVolunteers,
         status: 'responding',
       });
-      setMessage(`${selectedRescuers.length} rescuer(s) and ${selectedVolunteers.length} volunteer(s) dispatched and user notified.`);
+      
+      const dispatchedRescuersCount = selectedRescuer ? 1 : 0;
+      const dispatchedVolunteersCount = selectedVolunteers.length;
+      setMessage(`${dispatchedRescuersCount} rescuer(s) and ${dispatchedVolunteersCount} volunteer(s) dispatched and user notified.`);
+
       setTimeout(() => setMessage(''), 3000);
       setSelectedReport(null);
-      setSelectedRescuers([]);
+      setSelectedRescuer(null);
       setSelectedVolunteers([]);
       fetchSosReports();
     } catch (err) {
@@ -394,6 +398,44 @@ const SosPage = () => {
       fetchSosReports();
     } catch (err) {
       setMessage('Failed to mark as safe.');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  // Mark location as a flooded area
+  const handleMarkAsFlooded = async (report) => {
+    if (!report || !report.location) {
+      setMessage('Cannot mark as flooded: missing report location.');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to mark this location as a flooded area? This will create a record on the Flood Affected Areas map.')) {
+      return;
+    }
+  
+    try {
+      await addDoc(collection(db, 'floodLocations'), {
+        routePoints: [
+          {
+            latitude: String(report.location.latitude),
+            longitude: String(report.location.longitude),
+            timestamp: String(Date.now()),
+          },
+        ],
+        timestamp: String(Date.now()),
+        isArchived: false,
+        source: 'sos_report',
+        sosReportId: report.id,
+        notes: `Flooded area from SOS. Danger: ${getFormValue(report, 'dangerLevel')}, People: ${getFormValue(report, 'numberOfPeople')}. Notes: ${getFormValue(report, 'notes')}`
+      });
+  
+      setMessage('Location marked as a flooded area.');
+      setTimeout(() => setMessage(''), 3000);
+  
+    } catch (error) {
+      console.error('Error marking as flooded:', error);
+      setMessage('Failed to mark location as flooded.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -571,9 +613,10 @@ const SosPage = () => {
               key={rescuer.id}
               id={rescuer.id}
               name={`${rescuer.firstName} ${rescuer.lastName}`}
-              isSelected={selectedRescuers.includes(rescuer.id)}
+              isSelected={selectedRescuer === rescuer.id}
               isAssigned={selectedReport.rescueUnits?.includes(rescuer.id)}
               onSelect={handleRescuerSelection}
+              selectionType="radio"
             />
           ))}
 
@@ -604,17 +647,26 @@ const SosPage = () => {
             ? 'bg-gray-400 cursor-not-allowed' 
             : 'bg-blue-600 hover:bg-blue-700'
         } ${
-          (selectedRescuers.length + selectedVolunteers.length) === 0 ? 'opacity-50 cursor-not-allowed' : ''
+          (selectedRescuer || selectedVolunteers.length > 0) ? '' : 'opacity-50 cursor-not-allowed'
         }`}
         onClick={handleAssignUnits}
-        disabled={assigning || (selectedRescuers.length + selectedVolunteers.length) === 0}
+        disabled={assigning || (!selectedRescuer && selectedVolunteers.length === 0)}
       >
         {assigning ? (
           <span className="flex items-center justify-center">
             <Spinner /> Assigning...
           </span>
-        ) : `Dispatch ${selectedRescuers.length + selectedVolunteers.length} Unit(s)`}
+        ) : `Dispatch ${ (selectedRescuer ? 1 : 0) + selectedVolunteers.length} Unit(s)`}
       </button>
+
+      {selectedReport.status !== 'resolved' && (
+        <button
+          className="w-full py-2.5 bg-orange-500 text-white rounded font-medium hover:bg-orange-600 transition-all"
+          onClick={() => handleMarkAsFlooded(selectedReport)}
+        >
+          Mark Location as Flooded
+        </button>
+      )}
 
       {selectedReport.status === 'responding' && (
         <button

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
@@ -23,6 +23,7 @@ const initialForm = {
   numClassroom: '',
   latitude: '',
   longitude: '',
+  assignedVolunteers: [],
 };
 
 const EvacuationCenter = () => {
@@ -42,6 +43,10 @@ const EvacuationCenter = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
+  const [volunteers, setVolunteers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [selectedVolunteers, setSelectedVolunteers] = useState([]);
+  const [selectedCenter, setSelectedCenter] = useState(null);
 
   // Fetch evacuation centers
   const fetchCenters = async () => {
@@ -59,8 +64,22 @@ const EvacuationCenter = () => {
     setLoading(false);
   };
 
+  // Fetch volunteers
+  const fetchVolunteers = async () => {
+    const snapshot = await getDocs(collection(db, 'volunteers'));
+    setVolunteers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  };
+
+  // Fetch users
+  const fetchUsers = async () => {
+    const snapshot = await getDocs(collection(db, 'users'));
+    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  };
+
   useEffect(() => {
     fetchCenters();
+    fetchVolunteers();
+    fetchUsers();
   }, []);
 
   // Search functionality
@@ -104,14 +123,16 @@ const EvacuationCenter = () => {
       numClassroom: center.numClassroom || '',
       latitude: center.latitude || '',
       longitude: center.longitude || '',
+      assignedVolunteers: center.assignedVolunteers || [],
     });
+    setSelectedVolunteers(center.assignedVolunteers || []);
     setEditingId(center.id);
     setIsModalOpen(true);
   };
 
-  // Map marker click to edit
+  // Map marker click to open InfoWindow
   const handleMarkerClick = (center) => {
-    handleEditCenter(center);
+    setSelectedCenter(center);
   };
 
   // Map click to set coordinates
@@ -148,6 +169,7 @@ const EvacuationCenter = () => {
         numClassroom: Number(form.numClassroom),
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
+        assignedVolunteers: selectedVolunteers,
       };
       if (editingId) {
         await updateDoc(doc(db, 'evacuationCenter', editingId), data);
@@ -159,6 +181,7 @@ const EvacuationCenter = () => {
       setIsModalOpen(false);
       setShowAddForm(false);
       setSelectedMarker(null);
+      setSelectedVolunteers([]);
       fetchCenters();
     } catch (err) {
       alert('Error saving evacuation center: ' + err.message);
@@ -281,6 +304,87 @@ const EvacuationCenter = () => {
                       }}
                       title={editingId ? "Editing Location" : "New Location"}
                     />
+                  )}
+                  
+                  {/* InfoWindow for selected center */}
+                  {selectedCenter && (
+                    <InfoWindow
+                      position={{ lat: Number(selectedCenter.latitude), lng: Number(selectedCenter.longitude) }}
+                      onCloseClick={() => setSelectedCenter(null)}
+                    >
+                      <div className="w-[350px] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
+                        <div className="bg-blue-600 text-white p-3 rounded-t-lg">
+                          <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-lg">{selectedCenter.centerName}</h3>
+                            <button onClick={() => setSelectedCenter(null)} className="text-white hover:text-gray-200 text-lg">&times;</button>
+                          </div>
+                          <div className="text-xs mt-1">Manager: {selectedCenter.campManager}</div>
+                          <div className="text-xs">Contact: {selectedCenter.contactNum}</div>
+                        </div>
+                        <div className="p-3 flex flex-col gap-2">
+                          <div className="text-xs text-gray-700">Capacity: {selectedCenter.capacityFam || 0} families, {selectedCenter.capacityInd || 0} individuals</div>
+                          <div className="text-xs text-gray-700">Classrooms: {selectedCenter.numClassroom || 0}</div>
+                          <div className="text-xs text-gray-400">({selectedCenter.latitude ? Number(selectedCenter.latitude).toFixed(4) : 'N/A'}, {selectedCenter.longitude ? Number(selectedCenter.longitude).toFixed(4) : 'N/A'})</div>
+                          <div className="mt-2">
+                            <div className="font-semibold text-sm mb-1">Assigned Volunteers</div>
+                            {selectedCenter.assignedVolunteers && selectedCenter.assignedVolunteers.length > 0 ? (
+                              <ul className="ml-2 list-disc">
+                                {selectedCenter.assignedVolunteers.map(volId => {
+                                  const vol = volunteers.find(v => v.id === volId);
+                                  const user = vol ? users.find(u => u.id === vol.userId) : null;
+                                  return (
+                                    <li key={volId} className="mb-1">
+                                      <span className="font-medium text-gray-700">{user ? `${user.firstName} ${user.lastName}` : volId}</span>
+                                      {vol && vol.choices && vol.choices.length > 0 && (
+                                        <span className="ml-1 text-blue-600">[{vol.choices.join(', ')}]</span>
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            ) : (
+                              <span className="ml-2 text-gray-400">None assigned</span>
+                            )}
+                          </div>
+                          <div className="mt-2">
+                            <div className="font-semibold text-sm mb-1">Assign Volunteers</div>
+                            <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                              {volunteers.length === 0 ? (
+                                <div className="text-xs text-gray-400">No volunteers available</div>
+                              ) : (
+                                volunteers.map(vol => {
+                                  const user = users.find(u => u.id === vol.userId);
+                                  const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
+                                  return (
+                                    <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedCenter.assignedVolunteers && selectedCenter.assignedVolunteers.includes(vol.id)}
+                                        onChange={async e => {
+                                          let updated;
+                                          if (e.target.checked) {
+                                            updated = [...(selectedCenter.assignedVolunteers || []), vol.id];
+                                          } else {
+                                            updated = (selectedCenter.assignedVolunteers || []).filter(id => id !== vol.id);
+                                          }
+                                          await updateDoc(doc(db, 'evacuationCenter', selectedCenter.id), { assignedVolunteers: updated });
+                                          setSelectedCenter({ ...selectedCenter, assignedVolunteers: updated });
+                                          fetchCenters();
+                                        }}
+                                      />
+                                      <span>{name}</span>
+                                      {vol.choices && vol.choices.length > 0 && (
+                                        <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
+                                      )}
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </InfoWindow>
                   )}
                 </GoogleMap>
               ) : <div className="flex items-center justify-center h-96">Loading map...</div>}
@@ -473,7 +577,13 @@ const EvacuationCenter = () => {
                     {filteredCenters.map(center => (
                       <div key={center.id} className="flex flex-col border-b py-3 last:border-b-0 hover:bg-gray-50 rounded p-2">
                         <div className="flex justify-between items-start">
-                          <div className="flex-1 cursor-pointer" onClick={() => handleCenterClick(center)}>
+                          <div className="flex-1 cursor-pointer" onClick={() => {
+                            setSelectedCenter(center);
+                            if (map && center.latitude && center.longitude) {
+                              map.panTo({ lat: Number(center.latitude), lng: Number(center.longitude) });
+                              map.setZoom(16);
+                            }
+                          }}>
                             <div className="font-semibold text-sm text-gray-800 hover:text-blue-600">{center.centerName}</div>
                             <div className="text-xs text-gray-500 mt-1">
                               Manager: {center.campManager}
@@ -636,6 +746,39 @@ const EvacuationCenter = () => {
                         onChange={e => setForm({ ...form, longitude: e.target.value })} 
                         required 
                       />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign Volunteers</label>
+                    <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                      {volunteers.length === 0 ? (
+                        <div className="text-xs text-gray-400">No volunteers available</div>
+                      ) : (
+                        volunteers.map(vol => {
+                          const user = users.find(u => u.id === vol.userId);
+                          const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
+                          return (
+                            <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedVolunteers.includes(vol.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setSelectedVolunteers(prev => [...prev, vol.id]);
+                                  } else {
+                                    setSelectedVolunteers(prev => prev.filter(id => id !== vol.id));
+                                  }
+                                }}
+                              />
+                              <span>{name}</span>
+                              {vol.choices && vol.choices.length > 0 && (
+                                <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
+                              )}
+                            </label>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                   
