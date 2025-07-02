@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, Polyline, DirectionsRenderer } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, Polyline, DirectionsRenderer, Circle } from '@react-google-maps/api';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
@@ -41,6 +41,7 @@ const FloodAffectedAreas = () => {
     archived: [],
     all: []
   });
+  const FIXED_CIRCLE_RADIUS_METERS = 100; // Fixed radius for single-point circles
 
   // Fetch routes from Firestore based on view mode
   const fetchRoutes = async (mode = viewMode) => {
@@ -505,31 +506,100 @@ const FloodAffectedAreas = () => {
                   onUnmount={onUnmount}
                   onClick={onMapClick}
                 >
-                  {/* Render directions for each route */}
-                  {Object.entries(directionsRenderers).map(([routeId, directions]) => {
-                    const route = routes.find(r => r.id === routeId);
-                    const isArchived = route?.isArchived;
-                    
+                  {/* Render a marker for the start point of each route */}
+                  {isLoaded && window.google && routes.map(route => {
+                    if (!route.routePoints || route.routePoints.length === 0) return null;
+                    const startPoint = route.routePoints[0];
+                    const isArchived = route.isArchived;
+                    const isSosSource = route.source === 'sos_report';
+                    const isHighlighted = route.id === highlightedRouteId;
+                    // Avoid duplicate markers if the route is being edited
+                    if (modalOpen && selectedRoute?.id === route.id) return null;
+                    let scale = 7;
+                    let fillColor = '#3182ce'; // Default active color
+                    let zIndex = 1;
+                    if (isArchived) {
+                      fillColor = '#A0AEC0'; // Default archived color
+                    }
+                    if (isSosSource && !isArchived) {
+                      fillColor = '#e53e3e'; // Red for SOS source
+                      scale = 20; // Bigger for SOS source
+                      zIndex = 2;
+                    }
+                    if (isHighlighted) {
+                      scale = 10;
+                      fillColor = '#e53e3e';
+                      zIndex = 3;
+                    }
                     return (
-                      <DirectionsRenderer
-                        key={routeId}
-                        directions={directions}
+                        <Marker
+                            key={`${route.id}-start-marker`}
+                            position={{ lat: parseFloat(startPoint.latitude), lng: parseFloat(startPoint.longitude) }}
+                            onClick={() => handleHighlightRoute(route)}
+                            title={`Route ${route.id.substring(0, 8)}`}
+                            options={{
+                                icon: {
+                                    path: window.google.maps.SymbolPath.CIRCLE,
+                                    scale: scale,
+                                    fillColor: fillColor,
+                                    fillOpacity: 1,
+                                    strokeWeight: 2,
+                                    strokeColor: 'white'
+                                },
+                                zIndex: zIndex
+                            }}
+                        />
+                    );
+                  })}
+
+                  {/* Always render a circle for each route */}
+                  {routes.map(route => {
+                    if (!window.google || !route.routePoints || route.routePoints.length === 0) return null;
+                    let center, radius;
+                    if (route.routePoints.length >= 2) {
+                      const pt1 = route.routePoints[0];
+                      const pt2 = route.routePoints[1];
+                      const lat1 = parseFloat(pt1.latitude);
+                      const lng1 = parseFloat(pt1.longitude);
+                      const lat2 = parseFloat(pt2.latitude);
+                      const lng2 = parseFloat(pt2.longitude);
+                      center = {
+                        lat: (lat1 + lat2) / 2,
+                        lng: (lng1 + lng2) / 2
+                      };
+                      const R = 6371000;
+                      const toRad = deg => deg * Math.PI / 180;
+                      const dLat = toRad(lat2 - lat1);
+                      const dLng = toRad(lng2 - lng1);
+                      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                                Math.sin(dLng/2) * Math.sin(dLng/2);
+                      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                      const distance = R * c;
+                      radius = distance / 2;
+                      if (distance < 1) {
+                        radius = FIXED_CIRCLE_RADIUS_METERS;
+                      }
+                    } else {
+                      const pt = route.routePoints[0];
+                      center = {
+                        lat: parseFloat(pt.latitude),
+                        lng: parseFloat(pt.longitude)
+                      };
+                      radius = FIXED_CIRCLE_RADIUS_METERS;
+                    }
+                    return (
+                      <Circle
+                        key={`${route.id}-circle`}
+                        center={center}
+                        radius={radius}
                         options={{
-                          suppressMarkers: true,
-                          polylineOptions: {
-                            strokeColor: routeId === highlightedRouteId 
-                              ? '#e53e3e' 
-                              : isArchived 
-                                ? '#9ca3af' 
-                                : '#3182ce',
-                            strokeOpacity: isArchived ? 0.5 : 0.8,
-                            strokeWeight: 6,
-                            zIndex: routeId === highlightedRouteId ? 2 : 1,
-                          }
-                        }}
-                        onClick={() => {
-                          const route = routes.find(r => r.id === routeId);
-                          if (route) handleHighlightRoute(route);
+                          fillColor: route.id === highlightedRouteId ? '#e53e3e' : '#3182ce',
+                          fillOpacity: 0.3,
+                          strokeColor: route.id === highlightedRouteId ? '#e53e3e' : '#3182ce',
+                          strokeOpacity: 0.8,
+                          strokeWeight: 3,
+                          zIndex: route.id === highlightedRouteId ? 2 : 1,
                         }}
                       />
                     );
@@ -582,6 +652,11 @@ const FloodAffectedAreas = () => {
                               Route {route.id.substring(0, 8)}...
                             </div>
                             {getStatusBadge(route)}
+                            {route.source === 'sos_report' && (
+                              <div className="text-xs text-yellow-700 bg-yellow-100 p-1 rounded-full inline-block mt-1">
+                                From SOS Report
+                              </div>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">
                             Points: {route.routePoints?.length || 0}
