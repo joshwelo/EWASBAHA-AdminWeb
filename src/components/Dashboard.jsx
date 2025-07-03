@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { getCache, setCache } from '../cache';
 
 const Dashboard = () => {
   const [users, setUsers] = useState([]);
@@ -22,24 +23,30 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh = false) => {
     try {
       setLoading(true);
-      
-      // Fetch users
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const usersData = usersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setUsers(usersData);
+      // Try cache first unless forceRefresh
+      let usersData = getCache('dashboard_users');
+      let evacCentersData = getCache('dashboard_evacCenters');
+      if (!usersData || !evacCentersData || forceRefresh) {
+        // Fetch users
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        usersData = usersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setCache('dashboard_users', usersData, 5 * 60 * 1000); // 5 min TTL
 
-      // Fetch evacuation centers
-      const evacCentersSnapshot = await getDocs(collection(db, 'evacuationCenter'));
-      const evacCentersData = evacCentersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+        // Fetch evacuation centers
+        const evacCentersSnapshot = await getDocs(collection(db, 'evacuationCenter'));
+        evacCentersData = evacCentersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setCache('dashboard_evacCenters', evacCentersData, 5 * 60 * 1000); // 5 min TTL
+      }
+      setUsers(usersData);
       setEvacuationCenters(evacCentersData);
 
       // Calculate metrics

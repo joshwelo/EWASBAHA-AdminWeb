@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { getCache, setCache } from '../cache';
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -64,11 +65,12 @@ const FloodAffectedAreas = () => {
   };
 
   // Fetch routes from Firestore
-  const fetchRoutes = async (mode = viewMode) => {
+  const fetchRoutes = async (mode = viewMode, forceRefresh = false) => {
     setLoading(true);
-    let querySnapshot;
-    
-    try {
+    let cacheKey = `flood_routes_${mode}`;
+    let routesData = getCache(cacheKey);
+    if (!routesData || forceRefresh) {
+      let querySnapshot;
       if (mode === 'active') {
         const q = query(
           collection(db, 'floodLocations'),
@@ -76,8 +78,7 @@ const FloodAffectedAreas = () => {
         );
         querySnapshot = await getDocs(q);
         const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const activeRoutes = allRoutes.filter(route => !route.isArchived);
-        setRoutes(activeRoutes);
+        routesData = allRoutes.filter(route => !route.isArchived);
       } else if (mode === 'archived') {
         const q = query(
           collection(db, 'floodLocations'),
@@ -85,63 +86,43 @@ const FloodAffectedAreas = () => {
           orderBy('timestamp', 'desc')
         );
         querySnapshot = await getDocs(q);
-        const routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setRoutes(routesData);
+        routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } else {
         const q = query(
           collection(db, 'floodLocations'),
           orderBy('timestamp', 'desc')
         );
         querySnapshot = await getDocs(q);
-        const routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setRoutes(routesData);
+        routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
-    } catch (error) {
-      console.error('Error fetching routes:', error);
-      const q = query(
-        collection(db, 'floodLocations'),
-        orderBy('timestamp', 'desc')
-      );
-      querySnapshot = await getDocs(q);
-      const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      if (mode === 'active') {
-        setRoutes(allRoutes.filter(route => !route.isArchived));
-      } else if (mode === 'archived') {
-        setRoutes(allRoutes.filter(route => route.isArchived));
-      } else {
-        setRoutes(allRoutes);
-      }
+      setCache(cacheKey, routesData, 5 * 60 * 1000);
     }
-    
+    setRoutes(routesData);
     setLoading(false);
   };
 
   // Fetch history data
-  const fetchHistoryData = async () => {
-    try {
-      setLoading(true);
+  const fetchHistoryData = async (forceRefresh = false) => {
+    setLoading(true);
+    let historyCache = getCache('flood_history');
+    if (!historyCache || forceRefresh) {
       const q = query(
         collection(db, 'floodLocations'),
         orderBy('timestamp', 'desc')
       );
       const querySnapshot = await getDocs(q);
       const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
       const activeRoutes = allRoutes.filter(route => !route.isArchived);
       const archivedRoutes = allRoutes.filter(route => route.isArchived);
-
-      setHistoryData({
+      historyCache = {
         active: activeRoutes,
         archived: archivedRoutes,
         all: allRoutes
-      });
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching history data:', error);
-      setLoading(false);
+      };
+      setCache('flood_history', historyCache, 5 * 60 * 1000);
     }
+    setHistoryData(historyCache);
+    setLoading(false);
   };
 
   useEffect(() => {

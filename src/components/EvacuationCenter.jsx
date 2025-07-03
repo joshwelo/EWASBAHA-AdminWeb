@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { getCache, setCache } from '../cache';
 
 // Fix for default markers in Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -100,31 +101,44 @@ const EvacuationCenter = () => {
   const mapRef = useRef();
 
   // Fetch evacuation centers
-  const fetchCenters = async () => {
+  const fetchCenters = async (forceRefresh = false) => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, 'evacuationCenter'));
-    const centersData = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      // Prefer top-level latitude/longitude, fallback to coordinates map
-      const latitude = data.latitude ?? data.coordinates?.latitude ?? '';
-      const longitude = data.longitude ?? data.coordinates?.longitude ?? '';
-      return { id: doc.id, ...data, latitude, longitude };
-    });
+    let centersData = getCache('evacuation_centers');
+    if (!centersData || forceRefresh) {
+      const querySnapshot = await getDocs(collection(db, 'evacuationCenter'));
+      centersData = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        const latitude = data.latitude ?? data.coordinates?.latitude ?? '';
+        const longitude = data.longitude ?? data.coordinates?.longitude ?? '';
+        return { id: doc.id, ...data, latitude, longitude };
+      });
+      setCache('evacuation_centers', centersData, 5 * 60 * 1000);
+    }
     setCenters(centersData);
     setFilteredCenters(centersData);
     setLoading(false);
   };
 
   // Fetch volunteers
-  const fetchVolunteers = async () => {
-    const snapshot = await getDocs(collection(db, 'volunteers'));
-    setVolunteers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const fetchVolunteers = async (forceRefresh = false) => {
+    let volunteersList = getCache('evacuation_volunteers');
+    if (!volunteersList || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'volunteers'));
+      volunteersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('evacuation_volunteers', volunteersList, 5 * 60 * 1000);
+    }
+    setVolunteers(volunteersList);
   };
 
   // Fetch users
-  const fetchUsers = async () => {
-    const snapshot = await getDocs(collection(db, 'users'));
-    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const fetchUsers = async (forceRefresh = false) => {
+    let usersList = getCache('evacuation_users');
+    if (!usersList || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'users'));
+      usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('evacuation_users', usersList, 5 * 60 * 1000);
+    }
+    setUsers(usersList);
   };
 
   useEffect(() => {

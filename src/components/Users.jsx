@@ -5,6 +5,7 @@ import Layout from './Layout';
 import AddUserModal from './AddUserModal';
 import EditUserModal from './EditUserModal';
 import VolunteerApplicationModal from './VolunteerApplicationModal';
+import { getCache, setCache } from '../cache';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -24,12 +25,16 @@ const Users = () => {
   const [verificationFilter, setVerificationFilter] = useState('');
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('');
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const usersCollection = collection(db, 'users');
-      const usersSnapshot = await getDocs(usersCollection);
-      const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      let usersList = getCache('users_list');
+      if (!usersList || forceRefresh) {
+        const usersCollection = collection(db, 'users');
+        const usersSnapshot = await getDocs(usersCollection);
+        usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setCache('users_list', usersList, 5 * 60 * 1000); // 5 min TTL
+      }
       setUsers(usersList);
     } catch (error) {
       console.error("Error fetching users: ", error);

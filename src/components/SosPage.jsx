@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
+import { getCache, setCache } from '../cache';
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -185,10 +186,14 @@ const SosPage = () => {
   };
 
   // Fetch SOS reports
-  const fetchSosReports = async () => {
+  const fetchSosReports = async (forceRefresh = false) => {
     setLoading(true);
-    const snapshot = await getDocs(collection(db, 'sos_reports'));
-    const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let reports = getCache('sos_reports');
+    if (!reports || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'sos_reports'));
+      reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('sos_reports', reports, 5 * 60 * 1000);
+    }
     setSosReports(reports);
     setLoading(false);
   };
@@ -231,22 +236,37 @@ const SosPage = () => {
   }, [sosReports, filterType, userLocation]);
 
   // Fetch rescuers
-  const fetchRescuers = async () => {
-    const q = query(collection(db, 'users'), where('userType', '==', 'rescuer'));
-    const snapshot = await getDocs(q);
-    setRescuers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const fetchRescuers = async (forceRefresh = false) => {
+    let rescuersList = getCache('sos_rescuers');
+    if (!rescuersList || forceRefresh) {
+      const q = query(collection(db, 'users'), where('userType', '==', 'rescuer'));
+      const snapshot = await getDocs(q);
+      rescuersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('sos_rescuers', rescuersList, 5 * 60 * 1000);
+    }
+    setRescuers(rescuersList);
   };
 
   // Fetch volunteers from volunteers collection
-  const fetchVolunteers = async () => {
-    const snapshot = await getDocs(collection(db, 'volunteers'));
-    setVolunteers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const fetchVolunteers = async (forceRefresh = false) => {
+    let volunteersList = getCache('sos_volunteers');
+    if (!volunteersList || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'volunteers'));
+      volunteersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('sos_volunteers', volunteersList, 5 * 60 * 1000);
+    }
+    setVolunteers(volunteersList);
   };
 
   // Fetch users to get volunteer names
-  const fetchUsers = async () => {
-    const snapshot = await getDocs(collection(db, 'users'));
-    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const fetchUsers = async (forceRefresh = false) => {
+    let usersList = getCache('sos_users');
+    if (!usersList || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'users'));
+      usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('sos_users', usersList, 5 * 60 * 1000);
+    }
+    setUsers(usersList);
   };
 
   useEffect(() => {
