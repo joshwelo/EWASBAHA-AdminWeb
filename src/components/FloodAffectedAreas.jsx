@@ -1,56 +1,75 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, Polyline, DirectionsRenderer, Circle } from '@react-google-maps/api';
+import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+
+// Fix for Leaflet marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 const containerStyle = {
   width: '100%',
   height: '400px',
 };
 
-const center = {
-  lat: 13.9725,
-  lng: 121.1668,
-};
+const center = [13.9725, 121.1668];
 
 const initialForm = {
-  routePoints: [], // { latitude: string, longitude: string, timestamp: string }
+  routePoints: [],
 };
 
 const FloodAffectedAreas = () => {
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q",
-    libraries: ['geometry', 'maps']
-  });
-
   const [map, setMap] = useState(null);
-  const [routes, setRoutes] = useState([]); // All flood routes
-  const [selectedRoute, setSelectedRoute] = useState(null); // Route being edited
+  const [routes, setRoutes] = useState([]);
+  const [selectedRoute, setSelectedRoute] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
-  const [drawing, setDrawing] = useState(false); // Drawing mode for new/edit route
+  const [drawing, setDrawing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [highlightedRouteId, setHighlightedRouteId] = useState(null);
-  const [directionsRenderers, setDirectionsRenderers] = useState({}); // Store directions for each route
-  const [viewMode, setViewMode] = useState('active'); // 'active', 'archived', 'all'
+  const [viewMode, setViewMode] = useState('active');
   const [historyData, setHistoryData] = useState({
     active: [],
     archived: [],
     all: []
   });
-  const FIXED_CIRCLE_RADIUS_METERS = 100; // Fixed radius for single-point circles
+  const FIXED_CIRCLE_RADIUS_METERS = 100;
 
-  // Fetch routes from Firestore based on view mode
+  // Custom hook to handle map events
+  const MapClickHandler = ({ drawing, onMapClick }) => {
+    const map = useMap();
+    
+    useEffect(() => {
+      if (!drawing) return;
+      
+      const handleClick = (e) => {
+        onMapClick(e);
+      };
+      
+      map.on('click', handleClick);
+      return () => {
+        map.off('click', handleClick);
+      };
+    }, [drawing, map, onMapClick]);
+    
+    return null;
+  };
+
+  // Fetch routes from Firestore
   const fetchRoutes = async (mode = viewMode) => {
     setLoading(true);
     let querySnapshot;
     
     try {
       if (mode === 'active') {
-        // Fetch all routes and filter client-side for active routes
         const q = query(
           collection(db, 'floodLocations'),
           orderBy('timestamp', 'desc')
@@ -60,7 +79,6 @@ const FloodAffectedAreas = () => {
         const activeRoutes = allRoutes.filter(route => !route.isArchived);
         setRoutes(activeRoutes);
       } else if (mode === 'archived') {
-        // Fetch only archived routes
         const q = query(
           collection(db, 'floodLocations'),
           where('isArchived', '==', true),
@@ -70,7 +88,6 @@ const FloodAffectedAreas = () => {
         const routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setRoutes(routesData);
       } else {
-        // Fetch all routes
         const q = query(
           collection(db, 'floodLocations'),
           orderBy('timestamp', 'desc')
@@ -81,7 +98,6 @@ const FloodAffectedAreas = () => {
       }
     } catch (error) {
       console.error('Error fetching routes:', error);
-      // Fallback: fetch all routes without filtering
       const q = query(
         collection(db, 'floodLocations'),
         orderBy('timestamp', 'desc')
@@ -98,34 +114,13 @@ const FloodAffectedAreas = () => {
       }
     }
     
-    // Calculate directions for each route that we're actually displaying
-    const routesToProcess = mode === 'active' ? 
-      routes.filter(route => !route.isArchived) : 
-      mode === 'archived' ? 
-      routes.filter(route => route.isArchived) : 
-      routes;
-
-    if (isLoaded && window.google && routesToProcess.length > 0) {
-      const newDirectionsRenderers = {};
-      for (const route of routesToProcess) {
-        if (route.routePoints && route.routePoints.length >= 2) {
-          const directions = await calculateDirections(route.routePoints);
-          if (directions) {
-            newDirectionsRenderers[route.id] = directions;
-          }
-        }
-      }
-      setDirectionsRenderers(newDirectionsRenderers);
-    }
     setLoading(false);
   };
 
-  // Fetch history data for the history modal
+  // Fetch history data
   const fetchHistoryData = async () => {
     try {
       setLoading(true);
-      
-      // Fetch all routes first
       const q = query(
         collection(db, 'floodLocations'),
         orderBy('timestamp', 'desc')
@@ -133,7 +128,6 @@ const FloodAffectedAreas = () => {
       const querySnapshot = await getDocs(q);
       const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Filter client-side
       const activeRoutes = allRoutes.filter(route => !route.isArchived);
       const archivedRoutes = allRoutes.filter(route => route.isArchived);
 
@@ -150,74 +144,27 @@ const FloodAffectedAreas = () => {
     }
   };
 
-  // Calculate directions between points
-  const calculateDirections = async (points) => {
-    if (!window.google || points.length < 2) return null;
-    
-    const directionsService = new window.google.maps.DirectionsService();
-    
-    try {
-      const waypoints = points.slice(1, -1).map(point => ({
-        location: new window.google.maps.LatLng(
-          parseFloat(point.latitude),
-          parseFloat(point.longitude)
-        ),
-        stopover: true
-      }));
-
-      const result = await new Promise((resolve, reject) => {
-        directionsService.route(
-          {
-            origin: new window.google.maps.LatLng(
-              parseFloat(points[0].latitude),
-              parseFloat(points[0].longitude)
-            ),
-            destination: new window.google.maps.LatLng(
-              parseFloat(points[points.length - 1].latitude),
-              parseFloat(points[points.length - 1].longitude)
-            ),
-            waypoints: waypoints,
-            travelMode: window.google.maps.TravelMode.DRIVING,
-            optimizeWaypoints: false
-          },
-          (result, status) => {
-            if (status === window.google.maps.DirectionsStatus.OK) {
-              resolve(result);
-            } else {
-              reject(status);
-            }
-          }
-        );
-      });
-
-      return result;
-    } catch (error) {
-      console.error('Error calculating directions:', error);
-      return null;
-    }
-  };
-
   useEffect(() => {
     fetchRoutes();
-  }, [isLoaded, viewMode]);
+  }, [viewMode]);
 
-  // Map click to add points to the route (when drawing)
-  const onMapClick = useCallback((event) => {
+  // Handle map clicks
+  const onMapClick = useCallback((e) => {
     if (!drawing) return;
     setForm((prev) => ({
       ...prev,
       routePoints: [
         ...prev.routePoints,
         {
-          latitude: String(event.latLng.lat()),
-          longitude: String(event.latLng.lng()),
+          latitude: String(e.latlng.lat),
+          longitude: String(e.latlng.lng),
           timestamp: String(Date.now()),
         },
       ],
     }));
   }, [drawing]);
 
-  // Open modal for adding a new route
+  // Add new route handler
   const handleAddNew = () => {
     setForm(initialForm);
     setSelectedRoute(null);
@@ -226,18 +173,18 @@ const FloodAffectedAreas = () => {
     setHighlightedRouteId(null);
   };
 
-  // Open modal for editing a route
+  // Edit route handler
   const handleEditRoute = (route) => {
     setForm({
       routePoints: route.routePoints || [],
     });
     setSelectedRoute(route);
     setModalOpen(true);
-    setDrawing(false); // Only enable drawing if user clicks 'Edit Points'
+    setDrawing(false);
     setHighlightedRouteId(route.id);
   };
 
-  // Archive a route instead of deleting it
+  // Archive route
   const handleArchiveRoute = async (id) => {
     if (!window.confirm('Archive this flood route? It will be moved to the archived routes.')) return;
     setLoading(true);
@@ -251,12 +198,6 @@ const FloodAffectedAreas = () => {
       setForm(initialForm);
       setSelectedRoute(null);
       setHighlightedRouteId(null);
-      
-      // Remove from directions renderers
-      const newDirectionsRenderers = { ...directionsRenderers };
-      delete newDirectionsRenderers[id];
-      setDirectionsRenderers(newDirectionsRenderers);
-      
       fetchRoutes();
     } catch (error) {
       alert('Error archiving flood route: ' + error.message);
@@ -264,7 +205,7 @@ const FloodAffectedAreas = () => {
     setLoading(false);
   };
 
-  // Restore an archived route
+  // Restore route
   const handleRestoreRoute = async (id) => {
     if (!window.confirm('Restore this flood route to active routes?')) return;
     setLoading(true);
@@ -273,7 +214,6 @@ const FloodAffectedAreas = () => {
         isArchived: false,
         restoredAt: String(Date.now())
       });
-      
       fetchRoutes();
     } catch (error) {
       alert('Error restoring flood route: ' + error.message);
@@ -281,23 +221,16 @@ const FloodAffectedAreas = () => {
     setLoading(false);
   };
 
-  // Permanently delete a route (only for archived routes)
+  // Delete route
   const handlePermanentDelete = async (id) => {
     if (!window.confirm('Permanently delete this flood route? This action cannot be undone.')) return;
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'floodLocations', id));
-      
       setModalOpen(false);
       setForm(initialForm);
       setSelectedRoute(null);
       setHighlightedRouteId(null);
-      
-      // Remove from directions renderers
-      const newDirectionsRenderers = { ...directionsRenderers };
-      delete newDirectionsRenderers[id];
-      setDirectionsRenderers(newDirectionsRenderers);
-      
       fetchRoutes();
     } catch (error) {
       alert('Error deleting flood route: ' + error.message);
@@ -305,7 +238,7 @@ const FloodAffectedAreas = () => {
     setLoading(false);
   };
 
-  // Save (add or update) route
+  // Save route
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -316,27 +249,13 @@ const FloodAffectedAreas = () => {
         isArchived: false
       };
       
-      let routeId;
       if (selectedRoute) {
         await updateDoc(doc(db, 'floodLocations', selectedRoute.id), {
           ...data,
           updatedAt: String(Date.now())
         });
-        routeId = selectedRoute.id;
       } else {
-        const docRef = await addDoc(collection(db, 'floodLocations'), data);
-        routeId = docRef.id;
-      }
-
-      // Calculate directions for the new/updated route
-      if (form.routePoints.length >= 2) {
-        const directions = await calculateDirections(form.routePoints);
-        if (directions) {
-          setDirectionsRenderers(prev => ({
-            ...prev,
-            [routeId]: directions
-          }));
-        }
+        await addDoc(collection(db, 'floodLocations'), data);
       }
 
       setModalOpen(false);
@@ -350,7 +269,7 @@ const FloodAffectedAreas = () => {
     setLoading(false);
   };
 
-  // Remove a point from the route
+  // Remove point from route
   const handleRemovePoint = (idx) => {
     setForm((prev) => ({
       ...prev,
@@ -358,51 +277,42 @@ const FloodAffectedAreas = () => {
     }));
   };
 
-  // Start drawing mode for editing points
+  // Start drawing
   const handleStartDrawing = () => {
     setDrawing(true);
   };
 
-  // Stop drawing mode
+  // Stop drawing
   const handleStopDrawing = () => {
     setDrawing(false);
   };
 
-  // Highlight route on map when selected in sidebar and center map on it
+  // Highlight route on map
   const handleHighlightRoute = (route) => {
     setHighlightedRouteId(route.id);
     setForm({
       routePoints: route.routePoints || [],
     });
-    
-    // Center and zoom map to the route
+  
     if (map && route.routePoints && route.routePoints.length > 0) {
-      const bounds = new window.google.maps.LatLngBounds();
-      
-      // Add all route points to bounds
-      route.routePoints.forEach(point => {
-        bounds.extend(new window.google.maps.LatLng(
-          parseFloat(point.latitude),
-          parseFloat(point.longitude)
-        ));
-      });
-      
-      // Fit map to bounds with padding
-      map.fitBounds(bounds, {
-        top: 50,
-        right: 50,
-        bottom: 50,
-        left: 50
-      });
-      
-      // If it's a single point or very small area, set a reasonable zoom level
-      if (route.routePoints.length === 1) {
-        map.setZoom(16);
-        map.setCenter({
-          lat: parseFloat(route.routePoints[0].latitude),
-          lng: parseFloat(route.routePoints[0].longitude)
-        });
-      }
+      const points = route.routePoints.map(pt => [
+        parseFloat(pt.latitude),
+        parseFloat(pt.longitude)
+      ]);
+  
+      // Use setTimeout to ensure map is ready
+      setTimeout(() => {
+        if (route.routePoints.length === 1) {
+          // For a single point, zoom in to a minimum zoom level (e.g., 16)
+          map.setView(points[0], 16, { animate: true });
+        } else {
+          const bounds = L.latLngBounds(points);
+          map.fitBounds(bounds, {
+            padding: [50, 50],
+            animate: true
+          });
+        }
+      }, 100);
     }
   };
 
@@ -411,16 +321,6 @@ const FloodAffectedAreas = () => {
     setHistoryModalOpen(true);
     fetchHistoryData();
   };
-
-  const onLoad = useCallback(function callback(map) {
-    const bounds = new window.google.maps.LatLngBounds(center);
-    map.fitBounds(bounds);
-    setMap(map);
-  }, []);
-
-  const onUnmount = useCallback(function callback(map) {
-    setMap(null);
-  }, []);
 
   const formatTimestamp = (timestamp) => {
     const date = new Date(parseInt(timestamp));
@@ -432,6 +332,73 @@ const FloodAffectedAreas = () => {
       return <span className="inline-block px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded-full">Archived</span>;
     }
     return <span className="inline-block px-2 py-1 text-xs bg-green-200 text-green-700 rounded-full">Active</span>;
+  };
+
+  // Calculate circle properties for a route
+  const getCircleForRoute = (route) => {
+    if (!route.routePoints || route.routePoints.length === 0) return null;
+    
+    if (route.routePoints.length >= 2) {
+      const pt1 = route.routePoints[0];
+      const pt2 = route.routePoints[1];
+      const lat1 = parseFloat(pt1.latitude);
+      const lng1 = parseFloat(pt1.longitude);
+      const lat2 = parseFloat(pt2.latitude);
+      const lng2 = parseFloat(pt2.longitude);
+      
+      const center = [(lat1 + lat2) / 2, (lng1 + lng2) / 2];
+      
+      // Calculate distance using Haversine formula
+      const R = 6371000;
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+      let radius = distance / 2;
+      if (distance < 1) {
+        radius = FIXED_CIRCLE_RADIUS_METERS;
+      }
+      
+      return { center, radius };
+    } else {
+      const pt = route.routePoints[0];
+      return {
+        center: [parseFloat(pt.latitude), parseFloat(pt.longitude)],
+        radius: FIXED_CIRCLE_RADIUS_METERS
+      };
+    }
+  };
+
+  // Get route style properties
+  const getRouteStyle = (route) => {
+    const isArchived = route.isArchived;
+    const isSosSource = route.source === 'sos_report';
+    const isHighlighted = route.id === highlightedRouteId;
+    
+    let fillColor = '#3182ce';
+    let strokeColor = '#3182ce';
+    
+    if (isArchived) {
+      fillColor = '#A0AEC0';
+      strokeColor = '#A0AEC0';
+    }
+    if (isSosSource && !isArchived) {
+      fillColor = '#e53e3e';
+      strokeColor = '#e53e3e';
+    }
+    if (isHighlighted) {
+      fillColor = '#e53e3e';
+      strokeColor = '#e53e3e';
+    }
+    
+    return {
+      fillColor,
+      color: strokeColor
+    };
   };
 
   return (
@@ -495,148 +462,98 @@ const FloodAffectedAreas = () => {
         </div>
 
         <div className="px-6 pb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-300px)]">
             <div className="lg:col-span-3">
-              {isLoaded ? (
-                <GoogleMap
-                  mapContainerStyle={containerStyle}
-                  center={center}
-                  zoom={12}
-                  onLoad={onLoad}
-                  onUnmount={onUnmount}
-                  onClick={onMapClick}
-                >
-                  {/* Render a marker for the start point of each route */}
-                  {isLoaded && window.google && routes.map(route => {
-                    if (!route.routePoints || route.routePoints.length === 0) return null;
-                    const startPoint = route.routePoints[0];
-                    const isArchived = route.isArchived;
-                    const isSosSource = route.source === 'sos_report';
-                    const isHighlighted = route.id === highlightedRouteId;
-                    // Avoid duplicate markers if the route is being edited
-                    if (modalOpen && selectedRoute?.id === route.id) return null;
-                    let scale = 7;
-                    let fillColor = '#3182ce'; // Default active color
-                    let zIndex = 1;
-                    if (isArchived) {
-                      fillColor = '#A0AEC0'; // Default archived color
-                    }
-                    if (isSosSource && !isArchived) {
-                      fillColor = '#e53e3e'; // Red for SOS source
-                      scale = 20; // Bigger for SOS source
-                      zIndex = 2;
-                    }
-                    if (isHighlighted) {
-                      scale = 10;
-                      fillColor = '#e53e3e';
-                      zIndex = 3;
-                    }
-                    return (
-                        <Marker
-                            key={`${route.id}-start-marker`}
-                            position={{ lat: parseFloat(startPoint.latitude), lng: parseFloat(startPoint.longitude) }}
-                            onClick={() => handleHighlightRoute(route)}
-                            title={`Route ${route.id.substring(0, 8)}`}
-                            options={{
-                                icon: {
-                                    path: window.google.maps.SymbolPath.CIRCLE,
-                                    scale: scale,
-                                    fillColor: fillColor,
-                                    fillOpacity: 1,
-                                    strokeWeight: 2,
-                                    strokeColor: 'white'
-                                },
-                                zIndex: zIndex
-                            }}
+              <MapContainer
+                center={center}
+                zoom={12}
+                style={{ width: '100%', height: '100%' }}
+                ref={setMap}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {/* Map click handler */}
+                <MapClickHandler drawing={drawing} onMapClick={onMapClick} />
+                {/* Render routes */}
+                {routes.map(route => {
+                  const style = getRouteStyle(route);
+                  const circleProps = getCircleForRoute(route);
+                  const isHighlighted = route.id === highlightedRouteId;
+                  return (
+                    <React.Fragment key={route.id}>
+                      {/* Route polyline */}
+                      {route.routePoints && route.routePoints.length >= 2 && (
+                        <Polyline
+                          positions={route.routePoints.map(pt => [
+                            parseFloat(pt.latitude),
+                            parseFloat(pt.longitude)
+                          ])}
+                          color={style.color}
+                          weight={4}
+                          opacity={0.8}
                         />
-                    );
-                  })}
-
-                  {/* Always render a circle for each route */}
-                  {routes.map(route => {
-                    if (!window.google || !route.routePoints || route.routePoints.length === 0) return null;
-                    let center, radius;
-                    if (route.routePoints.length >= 2) {
-                      const pt1 = route.routePoints[0];
-                      const pt2 = route.routePoints[1];
-                      const lat1 = parseFloat(pt1.latitude);
-                      const lng1 = parseFloat(pt1.longitude);
-                      const lat2 = parseFloat(pt2.latitude);
-                      const lng2 = parseFloat(pt2.longitude);
-                      center = {
-                        lat: (lat1 + lat2) / 2,
-                        lng: (lng1 + lng2) / 2
-                      };
-                      const R = 6371000;
-                      const toRad = deg => deg * Math.PI / 180;
-                      const dLat = toRad(lat2 - lat1);
-                      const dLng = toRad(lng2 - lng1);
-                      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                                Math.sin(dLng/2) * Math.sin(dLng/2);
-                      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                      const distance = R * c;
-                      radius = distance / 2;
-                      if (distance < 1) {
-                        radius = FIXED_CIRCLE_RADIUS_METERS;
-                      }
-                    } else {
-                      const pt = route.routePoints[0];
-                      center = {
-                        lat: parseFloat(pt.latitude),
-                        lng: parseFloat(pt.longitude)
-                      };
-                      radius = FIXED_CIRCLE_RADIUS_METERS;
-                    }
-                    return (
-                      <Circle
-                        key={`${route.id}-circle`}
-                        center={center}
-                        radius={radius}
-                        options={{
-                          fillColor: route.id === highlightedRouteId ? '#e53e3e' : '#3182ce',
-                          fillOpacity: 0.3,
-                          strokeColor: route.id === highlightedRouteId ? '#e53e3e' : '#3182ce',
-                          strokeOpacity: 0.8,
-                          strokeWeight: 3,
-                          zIndex: route.id === highlightedRouteId ? 2 : 1,
-                        }}
-                      />
-                    );
-                  })}
-                  
-                  {/* Show current drawing polyline (for add/edit) */}
-                  {modalOpen && form.routePoints.length > 0 && (
-                    <Polyline
-                      path={form.routePoints.map(pt => ({ lat: parseFloat(pt.latitude), lng: parseFloat(pt.longitude) }))}
-                      options={{
-                        strokeColor: '#38a169',
-                        strokeOpacity: 0.8,
-                        strokeWeight: 4,
-                        zIndex: 3,
-                        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 4 }, offset: '0', repeat: '20px' }],
-                      }}
-                    />
-                  )}
-                  
-                  {/* Markers for each point in the current drawing polyline */}
-                  {modalOpen && form.routePoints.map((pt, idx) => (
-                    <Marker
-                      key={idx}
-                      position={{ lat: parseFloat(pt.latitude), lng: parseFloat(pt.longitude) }}
-                      icon={{ url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' }}
-                      title={`Point ${idx + 1}`}
-                    />
-                  ))}
-                </GoogleMap>
-              ) : <div>Loading...</div>}
+                      )}
+                      {/* Route circle */}
+                      {circleProps && (
+                        <Circle
+                          center={circleProps.center}
+                          radius={circleProps.radius}
+                          pathOptions={{
+                            fillColor: style.fillColor,
+                            fillOpacity: 0.3,
+                            color: style.color,
+                            opacity: 0.8,
+                            weight: 3
+                          }}
+                        />
+                      )}
+                      {/* Start marker */}
+                      {route.routePoints && route.routePoints.length > 0 && (
+                        <Marker
+                          position={[
+                            parseFloat(route.routePoints[0].latitude),
+                            parseFloat(route.routePoints[0].longitude)
+                          ]}
+                          eventHandlers={{
+                            click: () => handleHighlightRoute(route)
+                          }}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+                {/* Current drawing */}
+                {modalOpen && form.routePoints.length > 0 && (
+                  <Polyline
+                    positions={form.routePoints.map(pt => [
+                      parseFloat(pt.latitude),
+                      parseFloat(pt.longitude)
+                    ])}
+                    color="#38a169"
+                    weight={4}
+                    opacity={0.8}
+                  />
+                )}
+                {modalOpen && form.routePoints.map((pt, idx) => (
+                  <Marker
+                    key={idx}
+                    position={[
+                      parseFloat(pt.latitude),
+                      parseFloat(pt.longitude)
+                    ]}
+                  />
+                ))}
+              </MapContainer>
             </div>
-            <div>
-              <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm">
+            {/* Sidebar with updated content */}
+            <div className="h-full">
+              <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
                 <p className="text-[#111418] text-base font-medium leading-normal mb-4">
                   {viewMode === 'active' ? 'Active' : viewMode === 'archived' ? 'Archived' : 'All'} Routes ({routes.length})
                 </p>
-                <div className="max-h-96 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto">
                   {routes.length === 0 && (
                     <p className="text-gray-500 text-sm text-center py-4">
                       No {viewMode} routes found. 
@@ -644,39 +561,39 @@ const FloodAffectedAreas = () => {
                     </p>
                   )}
                   {routes.map(route => (
-                    <div key={route.id} className={`flex flex-col border-b py-3 last:border-b-0 hover:bg-gray-50 rounded p-2 cursor-pointer ${highlightedRouteId === route.id ? 'bg-blue-50' : ''}`} onClick={() => handleHighlightRoute(route)}>
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <div className="font-semibold text-sm text-gray-800">
-                              Route {route.id.substring(0, 8)}...
+                    <div key={route.id} className={`flex flex-col border-b py-2 last:border-b-0 hover:bg-gray-50 rounded p-2 cursor-pointer transition-colors ${highlightedRouteId === route.id ? 'bg-blue-50' : ''}`} onClick={() => handleHighlightRoute(route)}>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <div className="font-semibold text-xs text-gray-800 truncate">
+                              Route {route.id.substring(0, 6)}...
                             </div>
                             {getStatusBadge(route)}
                             {route.source === 'sos_report' && (
-                              <div className="text-xs text-yellow-700 bg-yellow-100 p-1 rounded-full inline-block mt-1">
-                                From SOS Report
+                              <div className="text-xs text-yellow-700 bg-yellow-100 px-1 py-0.5 rounded-full">
+                                SOS
                               </div>
                             )}
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-gray-500">
                             Points: {route.routePoints?.length || 0}
                           </div>
                           {route.timestamp && (
                             <div className="text-xs text-gray-400 mt-1">
-                              {formatTimestamp(route.timestamp)}
+                              {new Date(parseInt(route.timestamp)).toLocaleDateString()}
                             </div>
                           )}
                           {route.archivedAt && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              Archived: {formatTimestamp(route.archivedAt)}
+                            <div className="text-xs text-gray-400">
+                              Archived: {new Date(parseInt(route.archivedAt)).toLocaleDateString()}
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-col gap-1 ml-2">
+                        <div className="flex flex-col gap-1 flex-shrink-0">
                           {!route.isArchived && (
                             <>
                               <button
-                                className="text-blue-600 hover:underline text-xs px-2 py-1 rounded hover:bg-blue-50"
+                                className="text-blue-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-blue-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEditRoute(route);
@@ -685,7 +602,7 @@ const FloodAffectedAreas = () => {
                                 Edit
                               </button>
                               <button
-                                className="text-orange-600 hover:underline text-xs px-2 py-1 rounded hover:bg-orange-50"
+                                className="text-orange-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-orange-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleArchiveRoute(route.id);
@@ -698,7 +615,7 @@ const FloodAffectedAreas = () => {
                           {route.isArchived && (
                             <>
                               <button
-                                className="text-green-600 hover:underline text-xs px-2 py-1 rounded hover:bg-green-50"
+                                className="text-green-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-green-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleRestoreRoute(route.id);
@@ -707,7 +624,7 @@ const FloodAffectedAreas = () => {
                                 Restore
                               </button>
                               <button
-                                className="text-red-600 hover:underline text-xs px-2 py-1 rounded hover:bg-red-50"
+                                className="text-red-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-red-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handlePermanentDelete(route.id);

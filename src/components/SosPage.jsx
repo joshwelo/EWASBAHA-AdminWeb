@@ -1,18 +1,25 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
+
+// Fix for Leaflet marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 const containerStyle = {
   width: '100%',
   height: '500px',
 };
 
-const defaultCenter = {
-  lat: 14.080778,
-  lng: 121.175306,
-};
+const defaultCenter = [14.080778, 121.175306];
 
 // Helper Components
 const InfoCard = ({ label, value, highlight = false }) => (
@@ -59,7 +66,7 @@ const PersonnelSection = ({ title, personnel, getDetails, handleRemove, color, s
                 onClick={() => handleRemove(id)}
                 className="text-red-500 hover:text-red-700 font-bold text-xl"
               >
-                &times;
+                ×
               </button>
             </div>
           );
@@ -122,12 +129,6 @@ const Spinner = () => (
 );
 
 const SosPage = () => {
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q",
-    libraries: ['geometry', 'maps']
-  });
-
   const [map, setMap] = useState(null);
   const [sosReports, setSosReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
@@ -142,7 +143,7 @@ const SosPage = () => {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [filterType, setFilterType] = useState('urgency');
-  const [userLocation, setUserLocation] = useState(defaultCenter);
+  const [userLocation, setUserLocation] = useState({ lat: defaultCenter[0], lng: defaultCenter[1] });
   const [showResolvedModal, setShowResolvedModal] = useState(false);
   const [activeTab, setActiveTab] = useState('rescuers');
 
@@ -260,27 +261,24 @@ const SosPage = () => {
     filterAndSortReports();
   }, [sosReports, filterType, userLocation, filterAndSortReports]);
 
-  const onLoad = useCallback(function callback(map) {
-    const bounds = new window.google.maps.LatLngBounds(defaultCenter);
-    map.fitBounds(bounds);
-    setMap(map);
-  }, []);
+  // Helper for Leaflet map centering
+  const MapController = ({ center, zoom }) => {
+    const leafletMap = useMap();
+    useEffect(() => {
+      if (center && zoom) {
+        leafletMap.setView(center, zoom, { animate: true });
+      }
+    }, [leafletMap, center, zoom]);
+    return null;
+  };
 
-  const onUnmount = useCallback(function callback(map) {
-    setMap(null);
-  }, []);
-
-  // Navigate map to specific coordinates
+  //FIX 1: This function is now declarative. It only updates the state.
+  // The <MapController> component will react to the state change and update the map view.
+  // This prevents conflicts and ensures a single source of truth for map positioning.
   const navigateToSOS = (report) => {
-    if (map) {
-      const position = { lat: report.location.latitude, lng: report.location.longitude };
-      map.panTo(position);
-      map.setZoom(15);
-      setSelectedReport(report);
-      // Reset selected rescuers when switching reports
-      setSelectedRescuer(null);
-      setSelectedVolunteers([]);
-    }
+    setSelectedReport(report);
+    setSelectedRescuer(null);
+    setSelectedVolunteers([]);
   };
 
   // Handle rescuer selection (single selection)
@@ -498,190 +496,187 @@ const SosPage = () => {
         <div className="px-6 pb-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
-              {isLoaded ? (
-                <GoogleMap
-                  mapContainerStyle={containerStyle}
-                  center={defaultCenter}
-                  zoom={12}
-                  onLoad={onLoad}
-                  onUnmount={onUnmount}
-                >
-                  {filteredReports.map((report) => (
-                    <Marker
-                      key={report.id}
-                      position={{ lat: report.location.latitude, lng: report.location.longitude }}
-                      icon={{ url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' }}
-                      onClick={() => setSelectedReport(report)}
-                    />
-                  ))}
-                  {selectedReport && (
-                    <InfoWindow
-  position={{ lat: selectedReport.location.latitude, lng: selectedReport.location.longitude }}
-  onCloseClick={() => setSelectedReport(null)}
->
-  <div className="w-[500px]  flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
-    {/* Header Section */}
-    <div className="bg-red-600 text-white p-4">
-      <div className="flex justify-between items-start">
-        <h3 className="font-bold text-xl">SOS Emergency</h3>
-        <button 
-          onClick={() => setSelectedReport(null)}
-          className="text-white hover:text-gray-200 text-lg"
-        >
-          &times;
-        </button>
-      </div>
-      <div className="flex items-center mt-2">
-        <span className="bg-white text-red-600 py-1 px-3 rounded-full text-sm font-bold">
-          {selectedReport.status || 'ACTIVE'}
-        </span>
-        <span className="ml-3 font-medium">
-          {selectedReport.distance ? `${selectedReport.distance.toFixed(1)} km away` : 'Nearby'}
-        </span>
-      </div>
-    </div>
-
-    {/* Main Content - Scrollable */}
-    <div className="p-4 overflow-y-auto flex-grow">
-    {/* Critical Information Group */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <InfoCard label="Urgency Score" value={selectedReport.urgencyScore || 'N/A'} 
-                  highlight={selectedReport.urgencyScore > 7} />
-        <InfoCard label="Danger Level" value={getFormValue(selectedReport, 'dangerLevel')} />
-        <InfoCard label="People" value={getFormValue(selectedReport, 'numberOfPeople')} />
-        <InfoCard label="Can Evacuate" value={getFormValue(selectedReport, 'canEvacuate')} />
-      </div>
-
-      {/* Emergency Details */}
-      <Section title="Emergency Details">
-        <p className="text-gray-700">
-          {getFormValue(selectedReport, 'notes') || 'No additional notes'}
-        </p>
-        {selectedReport.formAnswers?.natureOfEmergency && (
-          <div className="mt-2">
-            <span className="font-medium block mb-1">Emergency Type:</span>
-            <div className="flex flex-wrap gap-1">
-              {(Array.isArray(selectedReport.formAnswers.natureOfEmergency)
-                ? selectedReport.formAnswers.natureOfEmergency
-                : [selectedReport.formAnswers.natureOfEmergency]
-              ).map((type, idx) => (
-                <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                  {type}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </Section>
-
-      {/* Assigned Personnel Section */}
-      {selectedReport.rescueUnits?.length > 0 && (
-        <PersonnelSection 
-          title="Assigned Rescuers"
-          personnel={selectedReport.rescueUnits}
-          getDetails={getRescuerName}
-          handleRemove={handleRemoveRescuer}
-          color="green"
-        />
-      )}
-
-      {selectedReport.volunteerUnits?.length > 0 && (
-        <PersonnelSection
-          title="Assigned Volunteers"
-          personnel={selectedReport.volunteerUnits}
-          getDetails={getVolunteerDetails}
-          handleRemove={handleRemoveVolunteer}
-          color="blue"
-          showSkills
-        />
-      )}
-
-      {/* Assignment Section */}
-      <Section title="Assign Additional Units" className="mt-4">
-        <div className="flex border-b mb-3">
-          <TabButton active={activeTab === 'rescuers'} onClick={() => setActiveTab('rescuers')}>
-            Rescuers ({rescuers.length})
-          </TabButton>
-          <TabButton active={activeTab === 'volunteers'} onClick={() => setActiveTab('volunteers')}>
-            Volunteers ({volunteers.length})
-          </TabButton>
-        </div>
-
-        <div className="max-h-40 overflow-y-auto pr-2">
-          {activeTab === 'rescuers' && rescuers.map(rescuer => (
-            <PersonnelItem
-              key={rescuer.id}
-              id={rescuer.id}
-              name={`${rescuer.firstName} ${rescuer.lastName}`}
-              isSelected={selectedRescuer === rescuer.id}
-              isAssigned={selectedReport.rescueUnits?.includes(rescuer.id)}
-              onSelect={handleRescuerSelection}
-              selectionType="radio"
-            />
-          ))}
-
-          {activeTab === 'volunteers' && volunteers.map(volunteer => {
-            const user = users.find(u => u.id === volunteer.userId);
-            return (
-              <PersonnelItem
-                key={volunteer.id}
-                id={volunteer.id}
-                name={user ? `${user.firstName} ${user.lastName}` : 'Unknown Volunteer'}
-                status={volunteer.status}
-                skills={volunteer.choices}
-                isSelected={selectedVolunteers.includes(volunteer.id)}
-                isAssigned={selectedReport.volunteerUnits?.includes(volunteer.id)}
-                onSelect={handleVolunteerSelection}
-              />
-            );
-          })}
-        </div>
-      </Section>
-    </div>
-
-    {/* Action Buttons */}
-    <div className="p-3 bg-gray-50 border-t flex flex-col gap-2">
-      <button
-        className={`w-full py-2.5 text-white rounded font-medium transition-all ${
-          assigning 
-            ? 'bg-gray-400 cursor-not-allowed' 
-            : 'bg-blue-600 hover:bg-blue-700'
-        } ${
-          (selectedRescuer || selectedVolunteers.length > 0) ? '' : 'opacity-50 cursor-not-allowed'
-        }`}
-        onClick={handleAssignUnits}
-        disabled={assigning || (!selectedRescuer && selectedVolunteers.length === 0)}
-      >
-        {assigning ? (
-          <span className="flex items-center justify-center">
-            <Spinner /> Assigning...
-          </span>
-        ) : `Dispatch ${ (selectedRescuer ? 1 : 0) + selectedVolunteers.length} Unit(s)`}
-      </button>
-
-      {selectedReport.status !== 'resolved' && (
-        <button
-          className="w-full py-2.5 bg-orange-500 text-white rounded font-medium hover:bg-orange-600 transition-all"
-          onClick={() => handleMarkAsFlooded(selectedReport)}
-        >
-          Mark Location as Flooded
-        </button>
-      )}
-
-      {selectedReport.status === 'responding' && (
-        <button
-          className="w-full py-2.5 bg-green-600 text-white rounded font-medium hover:bg-green-700 transition-all"
-          onClick={() => handleMarkSafe(selectedReport.id)}
-        >
-          Mark Situation as Safe
-        </button>
-      )}
-    </div>
-  </div>
-</InfoWindow>
-                  )}
-                </GoogleMap>
-              ) : <div>Loading Map...</div>}
+              <MapContainer
+                center={defaultCenter}
+                zoom={12}
+                style={containerStyle}
+                whenCreated={setMap}
+              >
+                <TileLayer
+                  attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <MapController center={selectedReport ? [selectedReport.location.latitude, selectedReport.location.longitude] : [userLocation.lat, userLocation.lng]} zoom={selectedReport ? 15 : 12} />
+                {filteredReports.map((report) => (
+                  <Marker
+                    key={report.id}
+                    position={[report.location.latitude, report.location.longitude]}
+                    eventHandlers={{
+                      click: () => setSelectedReport(report)
+                    }}
+                  />
+                ))}
+                {selectedReport && (
+                  // FIX 2: Added maxWidth to the Popup. This tells Leaflet to allow a wider container.
+                  <Popup
+                    position={[selectedReport.location.latitude, selectedReport.location.longitude]}
+                    onClose={() => setSelectedReport(null)}
+                    maxWidth={500}
+                  >
+                    {/* FIX 2: Removed w-[500px]. The popup's width is now responsive. It will grow
+                        with its content up to the `maxWidth` defined above, and shrink on smaller screens. */}
+                    <div className="flex flex-col bg-white rounded-lg shadow-xl overflow-hidden" style={{ width: '100%', maxWidth: '500px' }}>
+                      {/* Header Section */}
+                      <div className="bg-red-600 text-white p-4">
+                        <div className="flex justify-between items-start">
+                          <h3 className="font-bold text-xl">SOS Emergency</h3>
+                          <button 
+                            onClick={() => setSelectedReport(null)}
+                            className="text-white hover:text-gray-200 text-lg"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="flex items-center mt-2">
+                          <span className="bg-white text-red-600 py-1 px-3 rounded-full text-sm font-bold">
+                            {selectedReport.status || 'ACTIVE'}
+                          </span>
+                          <span className="ml-3 font-medium">
+                            {selectedReport.distance ? `${selectedReport.distance.toFixed(1)} km away` : 'Nearby'}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Main Content - Scrollable */}
+                      <div className="p-4 overflow-y-auto flex-grow">
+                        {/* Critical Information Group */}
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          <InfoCard label="Urgency Score" value={selectedReport.urgencyScore || 'N/A'} 
+                                    highlight={selectedReport.urgencyScore > 7} />
+                          <InfoCard label="Danger Level" value={getFormValue(selectedReport, 'dangerLevel')} />
+                          <InfoCard label="People" value={getFormValue(selectedReport, 'numberOfPeople')} />
+                          <InfoCard label="Can Evacuate" value={getFormValue(selectedReport, 'canEvacuate')} />
+                        </div>
+                        {/* Emergency Details */}
+                        <Section title="Emergency Details">
+                          <p className="text-gray-700">
+                            {getFormValue(selectedReport, 'notes') || 'No additional notes'}
+                          </p>
+                          {selectedReport.formAnswers?.natureOfEmergency && (
+                            <div className="mt-2">
+                              <span className="font-medium block mb-1">Emergency Type:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {(Array.isArray(selectedReport.formAnswers.natureOfEmergency)
+                                  ? selectedReport.formAnswers.natureOfEmergency
+                                  : [selectedReport.formAnswers.natureOfEmergency]
+                                ).map((type, idx) => (
+                                  <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                                    {type}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </Section>
+                        {/* Assigned Personnel Section */}
+                        {selectedReport.rescueUnits?.length > 0 && (
+                          <PersonnelSection 
+                            title="Assigned Rescuers"
+                            personnel={selectedReport.rescueUnits}
+                            getDetails={getRescuerName}
+                            handleRemove={handleRemoveRescuer}
+                            color="green"
+                          />
+                        )}
+                        {selectedReport.volunteerUnits?.length > 0 && (
+                          <PersonnelSection
+                            title="Assigned Volunteers"
+                            personnel={selectedReport.volunteerUnits}
+                            getDetails={getVolunteerDetails}
+                            handleRemove={handleRemoveVolunteer}
+                            color="blue"
+                            showSkills
+                          />
+                        )}
+                        {/* Assignment Section */}
+                        <Section title="Assign Additional Units" className="mt-4">
+                          <div className="flex border-b mb-3">
+                            <TabButton active={activeTab === 'rescuers'} onClick={() => setActiveTab('rescuers')}>
+                              Rescuers ({rescuers.length})
+                            </TabButton>
+                            <TabButton active={activeTab === 'volunteers'} onClick={() => setActiveTab('volunteers')}>
+                              Volunteers ({volunteers.length})
+                            </TabButton>
+                          </div>
+                          <div className="max-h-40 overflow-y-auto pr-2">
+                            {activeTab === 'rescuers' && rescuers.map(rescuer => (
+                              <PersonnelItem
+                                key={rescuer.id}
+                                id={rescuer.id}
+                                name={`${rescuer.firstName} ${rescuer.lastName}`}
+                                isSelected={selectedRescuer === rescuer.id}
+                                isAssigned={selectedReport.rescueUnits?.includes(rescuer.id)}
+                                onSelect={handleRescuerSelection}
+                                selectionType="radio"
+                              />
+                            ))}
+                            {activeTab === 'volunteers' && volunteers.map(volunteer => {
+                              const user = users.find(u => u.id === volunteer.userId);
+                              return (
+                                <PersonnelItem
+                                  key={volunteer.id}
+                                  id={volunteer.id}
+                                  name={user ? `${user.firstName} ${user.lastName}` : 'Unknown Volunteer'}
+                                  status={volunteer.status}
+                                  skills={volunteer.choices}
+                                  isSelected={selectedVolunteers.includes(volunteer.id)}
+                                  isAssigned={selectedReport.volunteerUnits?.includes(volunteer.id)}
+                                  onSelect={handleVolunteerSelection}
+                                />
+                              );
+                            })}
+                          </div>
+                        </Section>
+                      </div>
+                      {/* Action Buttons */}
+                      <div className="p-3 bg-gray-50 border-t flex flex-col gap-2">
+                        <button
+                          className={`w-full py-2.5 text-white rounded font-medium transition-all ${
+                            assigning 
+                              ? 'bg-gray-400 cursor-not-allowed' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          } ${
+                            (selectedRescuer || selectedVolunteers.length > 0) ? '' : 'opacity-50 cursor-not-allowed'
+                          }`}
+                          onClick={handleAssignUnits}
+                          disabled={assigning || (!selectedRescuer && selectedVolunteers.length === 0)}
+                        >
+                          {assigning ? (
+                            <span className="flex items-center justify-center">
+                              <Spinner /> Assigning...
+                            </span>
+                          ) : `Dispatch ${ (selectedRescuer ? 1 : 0) + selectedVolunteers.length} Unit(s)`}
+                        </button>
+                        {selectedReport.status !== 'resolved' && (
+                          <button
+                            className="w-full py-2.5 bg-orange-500 text-white rounded font-medium hover:bg-orange-600 transition-all"
+                            onClick={() => handleMarkAsFlooded(selectedReport)}
+                          >
+                            Mark Location as Flooded
+                          </button>
+                        )}
+                        {selectedReport.status === 'responding' && (
+                          <button
+                            className="w-full py-2.5 bg-green-600 text-white rounded font-medium hover:bg-green-700 transition-all"
+                            onClick={() => handleMarkSafe(selectedReport.id)}
+                          >
+                            Mark Situation as Safe
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </Popup>
+                )}
+              </MapContainer>
             </div>
             <div>
               <div className="flex flex-col gap-4">

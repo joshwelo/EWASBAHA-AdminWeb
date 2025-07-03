@@ -1,18 +1,48 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 
-const containerStyle = {
-  width: '100%',
-  height: '500px',
-};
+// Fix for default markers in Leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
-const defaultCenter = {
-  lat: 14.1119478,
-  lng: 121.1724706,
-};
+// Custom icons
+const blueIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const greenIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const yellowIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const defaultCenter = [14.1119478, 121.1724706];
 
 const initialForm = {
   centerName: '',
@@ -26,14 +56,32 @@ const initialForm = {
   assignedVolunteers: [],
 };
 
-const EvacuationCenter = () => {
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: "AIzaSyCzQbflN3B55lBQ8vTQKZF5qe9g0Mgrx7Q",
-    libraries: ['geometry', 'maps']
+// Component to handle map clicks
+const MapClickHandler = ({ onMapClick, isActive }) => {
+  useMapEvents({
+    click: (e) => {
+      if (isActive) {
+        onMapClick(e);
+      }
+    },
   });
+  return null;
+};
 
-  const [map, setMap] = useState(null);
+// Component to handle map centering
+const MapController = ({ center, zoom }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (center && zoom) {
+      map.setView(center, zoom);
+    }
+  }, [map, center, zoom]);
+  
+  return null;
+};
+
+const EvacuationCenter = () => {
   const [centers, setCenters] = useState([]);
   const [filteredCenters, setFilteredCenters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +95,9 @@ const EvacuationCenter = () => {
   const [users, setUsers] = useState([]);
   const [selectedVolunteers, setSelectedVolunteers] = useState([]);
   const [selectedCenter, setSelectedCenter] = useState(null);
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [mapZoom, setMapZoom] = useState(12);
+  const mapRef = useRef();
 
   // Fetch evacuation centers
   const fetchCenters = async () => {
@@ -105,10 +156,9 @@ const EvacuationCenter = () => {
 
   // Zoom to center location only
   const handleCenterClick = (center) => {
-    // Zoom to the center location
-    if (map && center.latitude && center.longitude) {
-      map.panTo({ lat: center.latitude, lng: center.longitude });
-      map.setZoom(16);
+    if (center.latitude && center.longitude) {
+      setMapCenter([center.latitude, center.longitude]);
+      setMapZoom(16);
     }
   };
 
@@ -130,29 +180,22 @@ const EvacuationCenter = () => {
     setIsModalOpen(true);
   };
 
-  // Map marker click to open InfoWindow
-  const handleMarkerClick = (center) => {
-    setSelectedCenter(center);
-  };
-
   // Map click to set coordinates
   const onMapClick = useCallback((event) => {
+    const { lat, lng } = event.latlng;
     if (isModalOpen || showAddForm) {
       setForm((prev) => ({
         ...prev,
-        latitude: event.latLng.lat(),
-        longitude: event.latLng.lng(),
+        latitude: lat,
+        longitude: lng,
       }));
     } else {
       // Set marker for new location when not in modal or form
-      setSelectedMarker({
-        lat: event.latLng.lat(),
-        lng: event.latLng.lng()
-      });
+      setSelectedMarker([lat, lng]);
       setForm((prev) => ({
         ...prev,
-        latitude: event.latLng.lat(),
-        longitude: event.latLng.lng(),
+        latitude: lat,
+        longitude: lng,
       }));
     }
   }, [isModalOpen, showAddForm]);
@@ -226,16 +269,6 @@ const EvacuationCenter = () => {
     setSearchQuery('');
   };
 
-  const onLoad = useCallback(function callback(map) {
-    const bounds = new window.google.maps.LatLngBounds(defaultCenter);
-    map.fitBounds(bounds);
-    setMap(map);
-  }, []);
-
-  const onUnmount = useCallback(function callback(map) {
-    setMap(null);
-  }, []);
-
   return (
     <Layout>
       <div className="w-full h-full">
@@ -257,28 +290,105 @@ const EvacuationCenter = () => {
         <div className="px-6 pb-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
-              {isLoaded ? (
-                <GoogleMap
-                  mapContainerStyle={containerStyle}
+              <div style={{ height: '500px', width: '100%' }}>
+                <MapContainer
                   center={defaultCenter}
                   zoom={12}
-                  onLoad={onLoad}
-                  onUnmount={onUnmount}
-                  onClick={onMapClick}
+                  style={{ height: '100%', width: '100%' }}
+                  ref={mapRef}
                 >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  
+                  <MapController center={mapCenter} zoom={mapZoom} />
+                  <MapClickHandler 
+                    onMapClick={onMapClick} 
+                    isActive={true}
+                  />
+                  
                   {/* Existing evacuation centers */}
                   {filteredCenters.map((center) => (
                     center.latitude && center.longitude && (
                       <Marker
                         key={center.id}
-                        position={{ lat: center.latitude, lng: center.longitude }}
-                        onClick={() => handleMarkerClick(center)}
-                        icon={{ 
-                          url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png',
-                          scaledSize: new window.google.maps.Size(32, 32)
-                        }}
-                        title={center.centerName}
-                      />
+                        position={[center.latitude, center.longitude]}
+                        icon={blueIcon}
+                      >
+                        <Popup maxWidth={400} className="custom-popup">
+                          <div className="w-[350px] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
+                            <div className="bg-blue-600 text-white p-3 rounded-t-lg">
+                              <div className="flex justify-between items-center">
+                                <h3 className="font-bold text-lg">{center.centerName}</h3>
+                              </div>
+                              <div className="text-xs mt-1">Manager: {center.campManager}</div>
+                              <div className="text-xs">Contact: {center.contactNum}</div>
+                            </div>
+                            <div className="p-3 flex flex-col gap-2">
+                              <div className="text-xs text-gray-700">Capacity: {center.capacityFam || 0} families, {center.capacityInd || 0} individuals</div>
+                              <div className="text-xs text-gray-700">Classrooms: {center.numClassroom || 0}</div>
+                              <div className="text-xs text-gray-400">({center.latitude ? Number(center.latitude).toFixed(4) : 'N/A'}, {center.longitude ? Number(center.longitude).toFixed(4) : 'N/A'})</div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-sm mb-1">Assigned Volunteers</div>
+                                {center.assignedVolunteers && center.assignedVolunteers.length > 0 ? (
+                                  <ul className="ml-2 list-disc">
+                                    {center.assignedVolunteers.map(volId => {
+                                      const vol = volunteers.find(v => v.id === volId);
+                                      const user = vol ? users.find(u => u.id === vol.userId) : null;
+                                      return (
+                                        <li key={volId} className="mb-1">
+                                          <span className="font-medium text-gray-700">{user ? `${user.firstName} ${user.lastName}` : volId}</span>
+                                          {vol && vol.choices && vol.choices.length > 0 && (
+                                            <span className="ml-1 text-blue-600">[{vol.choices.join(', ')}]</span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                ) : (
+                                  <span className="ml-2 text-gray-400">None assigned</span>
+                                )}
+                              </div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-sm mb-1">Assign Volunteers</div>
+                                <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                                  {volunteers.length === 0 ? (
+                                    <div className="text-xs text-gray-400">No volunteers available</div>
+                                  ) : (
+                                    volunteers.map(vol => {
+                                      const user = users.find(u => u.id === vol.userId);
+                                      const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
+                                      return (
+                                        <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={center.assignedVolunteers && center.assignedVolunteers.includes(vol.id)}
+                                            onChange={async e => {
+                                              let updated;
+                                              if (e.target.checked) {
+                                                updated = [...(center.assignedVolunteers || []), vol.id];
+                                              } else {
+                                                updated = (center.assignedVolunteers || []).filter(id => id !== vol.id);
+                                              }
+                                              await updateDoc(doc(db, 'evacuationCenter', center.id), { assignedVolunteers: updated });
+                                              fetchCenters();
+                                            }}
+                                          />
+                                          <span>{name}</span>
+                                          {vol.choices && vol.choices.length > 0 && (
+                                            <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
+                                          )}
+                                        </label>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </Popup>
+                      </Marker>
                     )
                   ))}
                   
@@ -286,108 +396,34 @@ const EvacuationCenter = () => {
                   {selectedMarker && !isModalOpen && !showAddForm && (
                     <Marker
                       position={selectedMarker}
-                      icon={{ 
-                        url: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png',
-                        scaledSize: new window.google.maps.Size(32, 32)
-                      }}
-                      title="New Location"
-                    />
+                      icon={greenIcon}
+                    >
+                      <Popup>
+                        <div className="text-sm">
+                          <strong>New Location</strong><br/>
+                          Click "Add New Center" to create an evacuation center here.
+                        </div>
+                      </Popup>
+                    </Marker>
                   )}
                   
                   {/* Preview marker when editing coordinates in modal or form */}
                   {form.latitude && form.longitude && (isModalOpen || showAddForm) && (
                     <Marker
-                      position={{ lat: Number(form.latitude), lng: Number(form.longitude) }}
-                      icon={{ 
-                        url: editingId ? 'http://maps.google.com/mapfiles/ms/icons/yellow-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/green-dot.png',
-                        scaledSize: new window.google.maps.Size(32, 32)
-                      }}
-                      title={editingId ? "Editing Location" : "New Location"}
-                    />
-                  )}
-                  
-                  {/* InfoWindow for selected center */}
-                  {selectedCenter && (
-                    <InfoWindow
-                      position={{ lat: Number(selectedCenter.latitude), lng: Number(selectedCenter.longitude) }}
-                      onCloseClick={() => setSelectedCenter(null)}
+                      position={[Number(form.latitude), Number(form.longitude)]}
+                      icon={editingId ? yellowIcon : greenIcon}
                     >
-                      <div className="w-[350px] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
-                        <div className="bg-blue-600 text-white p-3 rounded-t-lg">
-                          <div className="flex justify-between items-center">
-                            <h3 className="font-bold text-lg">{selectedCenter.centerName}</h3>
-                            <button onClick={() => setSelectedCenter(null)} className="text-white hover:text-gray-200 text-lg">&times;</button>
-                          </div>
-                          <div className="text-xs mt-1">Manager: {selectedCenter.campManager}</div>
-                          <div className="text-xs">Contact: {selectedCenter.contactNum}</div>
+                      <Popup>
+                        <div className="text-sm">
+                          <strong>{editingId ? "Editing Location" : "New Location"}</strong><br/>
+                          Lat: {Number(form.latitude).toFixed(4)}<br/>
+                          Lng: {Number(form.longitude).toFixed(4)}
                         </div>
-                        <div className="p-3 flex flex-col gap-2">
-                          <div className="text-xs text-gray-700">Capacity: {selectedCenter.capacityFam || 0} families, {selectedCenter.capacityInd || 0} individuals</div>
-                          <div className="text-xs text-gray-700">Classrooms: {selectedCenter.numClassroom || 0}</div>
-                          <div className="text-xs text-gray-400">({selectedCenter.latitude ? Number(selectedCenter.latitude).toFixed(4) : 'N/A'}, {selectedCenter.longitude ? Number(selectedCenter.longitude).toFixed(4) : 'N/A'})</div>
-                          <div className="mt-2">
-                            <div className="font-semibold text-sm mb-1">Assigned Volunteers</div>
-                            {selectedCenter.assignedVolunteers && selectedCenter.assignedVolunteers.length > 0 ? (
-                              <ul className="ml-2 list-disc">
-                                {selectedCenter.assignedVolunteers.map(volId => {
-                                  const vol = volunteers.find(v => v.id === volId);
-                                  const user = vol ? users.find(u => u.id === vol.userId) : null;
-                                  return (
-                                    <li key={volId} className="mb-1">
-                                      <span className="font-medium text-gray-700">{user ? `${user.firstName} ${user.lastName}` : volId}</span>
-                                      {vol && vol.choices && vol.choices.length > 0 && (
-                                        <span className="ml-1 text-blue-600">[{vol.choices.join(', ')}]</span>
-                                      )}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            ) : (
-                              <span className="ml-2 text-gray-400">None assigned</span>
-                            )}
-                          </div>
-                          <div className="mt-2">
-                            <div className="font-semibold text-sm mb-1">Assign Volunteers</div>
-                            <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
-                              {volunteers.length === 0 ? (
-                                <div className="text-xs text-gray-400">No volunteers available</div>
-                              ) : (
-                                volunteers.map(vol => {
-                                  const user = users.find(u => u.id === vol.userId);
-                                  const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
-                                  return (
-                                    <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedCenter.assignedVolunteers && selectedCenter.assignedVolunteers.includes(vol.id)}
-                                        onChange={async e => {
-                                          let updated;
-                                          if (e.target.checked) {
-                                            updated = [...(selectedCenter.assignedVolunteers || []), vol.id];
-                                          } else {
-                                            updated = (selectedCenter.assignedVolunteers || []).filter(id => id !== vol.id);
-                                          }
-                                          await updateDoc(doc(db, 'evacuationCenter', selectedCenter.id), { assignedVolunteers: updated });
-                                          setSelectedCenter({ ...selectedCenter, assignedVolunteers: updated });
-                                          fetchCenters();
-                                        }}
-                                      />
-                                      <span>{name}</span>
-                                      {vol.choices && vol.choices.length > 0 && (
-                                        <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
-                                      )}
-                                    </label>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </InfoWindow>
+                      </Popup>
+                    </Marker>
                   )}
-                </GoogleMap>
-              ) : <div className="flex items-center justify-center h-96">Loading map...</div>}
+                </MapContainer>
+              </div>
             </div>
             
             <div>
@@ -497,7 +533,7 @@ const EvacuationCenter = () => {
                           type="number" 
                           step="any" 
                           placeholder="Click on map" 
-                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-5000" 
+                          className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
                           value={form.longitude} 
                           onChange={e => setForm({ ...form, longitude: e.target.value })} 
                           required 
@@ -578,10 +614,9 @@ const EvacuationCenter = () => {
                       <div key={center.id} className="flex flex-col border-b py-3 last:border-b-0 hover:bg-gray-50 rounded p-2">
                         <div className="flex justify-between items-start">
                           <div className="flex-1 cursor-pointer" onClick={() => {
-                            setSelectedCenter(center);
-                            if (map && center.latitude && center.longitude) {
-                              map.panTo({ lat: Number(center.latitude), lng: Number(center.longitude) });
-                              map.setZoom(16);
+                            if (center.latitude && center.longitude) {
+                              setMapCenter([Number(center.latitude), Number(center.longitude)]);
+                              setMapZoom(16);
                             }
                           }}>
                             <div className="font-semibold text-sm text-gray-800 hover:text-blue-600">{center.centerName}</div>
@@ -636,13 +671,13 @@ const EvacuationCenter = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold text-gray-800">
+              <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold text-gray-800">
                     {editingId ? 'Edit Evacuation Center' : 'Add New Evacuation Center'}
                   </h2>
                   <button 
                     onClick={closeModal}
-                    className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                    className="text-gray-400 hover:text-gray-600 text-xl font-bold"
                   >
                     ×
                   </button>
@@ -654,7 +689,7 @@ const EvacuationCenter = () => {
                     <input 
                       type="text" 
                       placeholder="Enter center name" 
-                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                       value={form.centerName} 
                       onChange={e => setForm({ ...form, centerName: e.target.value })} 
                       required 
@@ -666,7 +701,7 @@ const EvacuationCenter = () => {
                     <input 
                       type="text" 
                       placeholder="Enter manager name" 
-                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                       value={form.campManager} 
                       onChange={e => setForm({ ...form, campManager: e.target.value })} 
                       required 
@@ -678,20 +713,20 @@ const EvacuationCenter = () => {
                     <input 
                       type="text" 
                       placeholder="Enter contact number" 
-                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                       value={form.contactNum} 
                       onChange={e => setForm({ ...form, contactNum: e.target.value })} 
                       required 
                     />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Family Capacity</label>
                       <input 
                         type="number" 
                         placeholder="0" 
-                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                         value={form.capacityFam} 
                         onChange={e => setForm({ ...form, capacityFam: e.target.value })} 
                         required 
@@ -702,7 +737,7 @@ const EvacuationCenter = () => {
                       <input 
                         type="number" 
                         placeholder="0" 
-                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                         value={form.capacityInd} 
                         onChange={e => setForm({ ...form, capacityInd: e.target.value })} 
                         required 
@@ -715,21 +750,21 @@ const EvacuationCenter = () => {
                     <input 
                       type="number" 
                       placeholder="0" 
-                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                       value={form.numClassroom} 
                       onChange={e => setForm({ ...form, numClassroom: e.target.value })} 
                       required 
                     />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
                       <input 
                         type="number" 
                         step="any" 
                         placeholder="Click on map" 
-                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                         value={form.latitude} 
                         onChange={e => setForm({ ...form, latitude: e.target.value })} 
                         required 
@@ -741,7 +776,7 @@ const EvacuationCenter = () => {
                         type="number" 
                         step="any" 
                         placeholder="Click on map" 
-                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" 
                         value={form.longitude} 
                         onChange={e => setForm({ ...form, longitude: e.target.value })} 
                         required 
@@ -750,30 +785,31 @@ const EvacuationCenter = () => {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign Volunteers</label>
-                    <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Assign Volunteers</label>
+                    <div className="max-h-32 overflow-y-auto border border-gray-300 rounded p-3 bg-gray-50">
                       {volunteers.length === 0 ? (
-                        <div className="text-xs text-gray-400">No volunteers available</div>
+                        <div className="text-sm text-gray-500">No volunteers available</div>
                       ) : (
-                        volunteers.map(vol => {
-                          const user = users.find(u => u.id === vol.userId);
-                          const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
+                        volunteers.map(volunteer => {
+                          const user = users.find(u => u.id === volunteer.userId);
+                          const name = user ? `${user.firstName} ${user.lastName}` : volunteer.userId;
                           return (
-                            <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                            <label key={volunteer.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={selectedVolunteers.includes(vol.id)}
+                                checked={selectedVolunteers.includes(volunteer.id)}
                                 onChange={e => {
                                   if (e.target.checked) {
-                                    setSelectedVolunteers(prev => [...prev, vol.id]);
+                                    setSelectedVolunteers([...selectedVolunteers, volunteer.id]);
                                   } else {
-                                    setSelectedVolunteers(prev => prev.filter(id => id !== vol.id));
+                                    setSelectedVolunteers(selectedVolunteers.filter(id => id !== volunteer.id));
                                   }
                                 }}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               />
                               <span>{name}</span>
-                              {vol.choices && vol.choices.length > 0 && (
-                                <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
+                              {volunteer.choices && volunteer.choices.length > 0 && (
+                                <span className="ml-2 text-blue-600 text-xs">[{volunteer.choices.join(', ')}]</span>
                               )}
                             </label>
                           );
@@ -782,8 +818,8 @@ const EvacuationCenter = () => {
                     </div>
                   </div>
                   
-                  <p className="text-xs text-gray-500">
-                    Tip: Click on the map to automatically set the coordinates, or enter them manually.
+                  <p className="text-sm text-gray-500">
+                    Click on the map to set coordinates
                   </p>
                   
                   <div className="flex gap-3 pt-4">
@@ -792,7 +828,7 @@ const EvacuationCenter = () => {
                       className="flex-1 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50" 
                       disabled={loading}
                     >
-                      {loading ? 'Saving...' : (editingId ? 'Update Center' : 'Add Center')}
+                      {loading ? (editingId ? 'Updating...' : 'Adding...') : (editingId ? 'Update Center' : 'Add Center')}
                     </button>
                     <button 
                       type="button" 
