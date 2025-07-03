@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
 
 const containerStyle = {
   width: '100%',
-  height: '400px',
+  height: '100%',
 };
 
 const center = [13.9725, 121.1668];
@@ -403,7 +403,7 @@ const FloodAffectedAreas = () => {
 
   return (
     <Layout>
-      <div className="w-full h-full">
+      <div className="w-full h-screen flex flex-col">
         <div className="px-6 py-6 flex justify-between items-center">
           <div className="flex flex-col gap-3">
             <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Flood Affected Areas</p>
@@ -461,13 +461,15 @@ const FloodAffectedAreas = () => {
           </div>
         </div>
 
-        <div className="px-6 pb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-300px)]">
-            <div className="lg:col-span-3">
+        <div className="px-6 pb-6 flex-1 flex flex-col">
+          <div className={`flex-1 grid grid-cols-1 gap-6 h-full transition-all duration-300 ${
+            modalOpen ? 'lg:grid-cols-[1fr_400px]' : 'lg:grid-cols-4'
+          }`}>
+            <div className={`h-full ${modalOpen ? '' : 'lg:col-span-3'}`}>
               <MapContainer
                 center={center}
                 zoom={12}
-                style={{ width: '100%', height: '100%' }}
+                style={containerStyle}
                 ref={setMap}
               >
                 <TileLayer
@@ -547,100 +549,174 @@ const FloodAffectedAreas = () => {
                 ))}
               </MapContainer>
             </div>
-            {/* Sidebar with updated content */}
-            <div className="h-full">
-              <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
-                <p className="text-[#111418] text-base font-medium leading-normal mb-4">
-                  {viewMode === 'active' ? 'Active' : viewMode === 'archived' ? 'Archived' : 'All'} Routes ({routes.length})
-                </p>
-                <div className="flex-1 overflow-y-auto">
-                  {routes.length === 0 && (
-                    <p className="text-gray-500 text-sm text-center py-4">
-                      No {viewMode} routes found. 
-                      {viewMode === 'active' && ' Click "Add New Route" to get started.'}
-                    </p>
-                  )}
-                  {routes.map(route => (
-                    <div key={route.id} className={`flex flex-col border-b py-2 last:border-b-0 hover:bg-gray-50 rounded p-2 cursor-pointer transition-colors ${highlightedRouteId === route.id ? 'bg-blue-50' : ''}`} onClick={() => handleHighlightRoute(route)}>
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <div className="font-semibold text-xs text-gray-800 truncate">
-                              Route {route.id.substring(0, 6)}...
+            
+            {/* Sidebar with updated content - always visible */}
+            {!modalOpen && (
+              <div className="h-full">
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
+                  <p className="text-[#111418] text-base font-medium leading-normal mb-4">
+                    {viewMode === 'active' ? 'Active' : viewMode === 'archived' ? 'Archived' : 'All'} Routes ({routes.length})
+                  </p>
+                  <div className="flex-1 overflow-y-auto">
+                    {routes.length === 0 && (
+                      <p className="text-gray-500 text-sm text-center py-4">
+                        No {viewMode} routes found. 
+                        {viewMode === 'active' && ' Click "Add New Route" to get started.'}
+                      </p>
+                    )}
+                    {routes.map(route => (
+                      <div key={route.id} className={`flex flex-col border-b py-2 last:border-b-0 hover:bg-gray-50 rounded p-2 cursor-pointer transition-colors ${highlightedRouteId === route.id ? 'bg-blue-50' : ''}`} onClick={() => handleHighlightRoute(route)}>
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <div className="font-semibold text-xs text-gray-800 truncate">
+                                Route {route.id.substring(0, 6)}...
+                              </div>
+                              {getStatusBadge(route)}
+                              {route.source === 'sos_report' && (
+                                <div className="text-xs text-yellow-700 bg-yellow-100 px-1 py-0.5 rounded-full">
+                                  SOS
+                                </div>
+                              )}
                             </div>
-                            {getStatusBadge(route)}
-                            {route.source === 'sos_report' && (
-                              <div className="text-xs text-yellow-700 bg-yellow-100 px-1 py-0.5 rounded-full">
-                                SOS
+                            <div className="text-xs text-gray-500">
+                              Points: {route.routePoints?.length || 0}
+                            </div>
+                            {route.timestamp && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                {new Date(parseInt(route.timestamp)).toLocaleDateString()}
+                              </div>
+                            )}
+                            {route.archivedAt && (
+                              <div className="text-xs text-gray-400">
+                                Archived: {new Date(parseInt(route.archivedAt)).toLocaleDateString()}
                               </div>
                             )}
                           </div>
-                          <div className="text-xs text-gray-500">
-                            Points: {route.routePoints?.length || 0}
+                          <div className="flex flex-col gap-1 flex-shrink-0">
+                            {!route.isArchived && (
+                              <>
+                                <button
+                                  className="text-blue-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-blue-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditRoute(route);
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="text-orange-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-orange-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleArchiveRoute(route.id);
+                                  }}
+                                >
+                                  Archive
+                                </button>
+                              </>
+                            )}
+                            {route.isArchived && (
+                              <>
+                                <button
+                                  className="text-green-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-green-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRestoreRoute(route.id);
+                                  }}
+                                >
+                                  Restore
+                                </button>
+                                <button
+                                  className="text-red-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePermanentDelete(route.id);
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
-                          {route.timestamp && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              {new Date(parseInt(route.timestamp)).toLocaleDateString()}
-                            </div>
-                          )}
-                          {route.archivedAt && (
-                            <div className="text-xs text-gray-400">
-                              Archived: {new Date(parseInt(route.archivedAt)).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-1 flex-shrink-0">
-                          {!route.isArchived && (
-                            <>
-                              <button
-                                className="text-blue-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEditRoute(route);
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="text-orange-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-orange-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleArchiveRoute(route.id);
-                                }}
-                              >
-                                Archive
-                              </button>
-                            </>
-                          )}
-                          {route.isArchived && (
-                            <>
-                              <button
-                                className="text-green-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-green-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRestoreRoute(route.id);
-                                }}
-                              >
-                                Restore
-                              </button>
-                              <button
-                                className="text-red-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-red-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePermanentDelete(route.id);
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Add/Edit Route Panel - replaces sidebar when modal is open */}
+            {modalOpen && (
+              <div className="h-full">
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">
+                      {selectedRoute ? 'Edit Flood Route' : 'Add New Flood Route'}
+                    </h2>
+                    <button
+                      onClick={() => { setModalOpen(false); setForm(initialForm); setSelectedRoute(null); setDrawing(false); }}
+                      className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+                      aria-label="Close"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <form onSubmit={handleSubmit} className="space-y-4 flex-1 flex flex-col">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Route Points</label>
+                      <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                        {form.routePoints.length === 0 && (
+                          <span className="text-xs text-gray-400">Click on the map to add points.</span>
+                        )}
+                        {form.routePoints.map((pt, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-xs p-2 bg-gray-50 rounded">
+                            <span className="flex-1">
+                              Point {idx + 1}: ({parseFloat(pt.latitude).toFixed(5)}, {parseFloat(pt.longitude).toFixed(5)})
+                            </span>
+                            <button 
+                              type="button" 
+                              className="text-red-500 hover:text-red-700 px-1" 
+                              onClick={() => handleRemovePoint(idx)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {!drawing && (
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          onClick={handleStartDrawing}
+                        >
+                          Edit Points
+                        </button>
+                      )}
+                      {drawing && (
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm"
+                          onClick={handleStopDrawing}
+                        >
+                          Stop Editing Points
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 text-sm"
+                        disabled={loading || form.routePoints.length < 2}
+                      >
+                        {loading ? 'Saving...' : (selectedRoute ? 'Update Route' : 'Add Route')}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

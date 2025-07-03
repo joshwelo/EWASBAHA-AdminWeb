@@ -522,12 +522,11 @@ const SosPage = () => {
                     position={[selectedReport.location.latitude, selectedReport.location.longitude]}
                     onClose={() => setSelectedReport(null)}
                     maxWidth={500}
+                    className="m-0"
                   >
-                    {/* FIX 2: Removed w-[500px]. The popup's width is now responsive. It will grow
-                        with its content up to the `maxWidth` defined above, and shrink on smaller screens. */}
-                    <div className="flex flex-col bg-white rounded-lg shadow-xl overflow-hidden" style={{ width: '100%', maxWidth: '500px' }}>
+                    <div className="flex flex-col bg-white rounded-lg shadow-xl overflow-hidden m-0" style={{  width: '500px', maxHeight: '500px' }}>
                       {/* Header Section */}
-                      <div className="bg-red-600 text-white p-4">
+                      <div className="bg-red-600 text-white p-4 m-0">
                         <div className="flex justify-between items-start">
                           <h3 className="font-bold text-xl">SOS Emergency</h3>
                           <button 
