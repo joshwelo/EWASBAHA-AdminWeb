@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
-import { getCache, setCache } from '../cache';
+import { getCache, setCache, clearCache } from '../cache';
+import { Tooltip } from 'react-tooltip';
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -188,6 +189,7 @@ const SosPage = () => {
   // Fetch SOS reports
   const fetchSosReports = async (forceRefresh = false) => {
     setLoading(true);
+    clearCache('sos_reports');
     let reports = getCache('sos_reports');
     if (!reports || forceRefresh) {
       const snapshot = await getDocs(collection(db, 'sos_reports'));
@@ -500,7 +502,18 @@ const SosPage = () => {
         <div className="px-6 py-6">
           <div className="flex flex-wrap justify-between gap-3">
             <div className="flex flex-col gap-3">
-              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">SOS Map & Dispatch</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">SOS Map & Dispatch</p>
+                <button
+                  data-tooltip-id="sos-tooltip"
+                  data-tooltip-content="Monitor and respond to SOS requests. Assign rescuers and volunteers to emergencies. Click on map markers to view details. Use filters to sort by urgency or proximity. View resolved SOS reports."
+                  className="ml-1 text-blue-500 hover:text-blue-700 focus:outline-none"
+                  type="button"
+                  aria-label="How to use SOS page"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="#e0e7ff"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#3730a3" fontFamily="Arial" dy="-1">?</text></svg>
+                </button>
+              </div>
               <p className="text-[#60758a] text-sm font-normal leading-normal">Monitor SOS requests, assign rescuers, and track rescue status in real time.</p>
             </div>
             <div className="flex gap-2">
@@ -909,6 +922,7 @@ const SosPage = () => {
           </div>
         )}
       </div>
+      <Tooltip id="sos-tooltip" place="right" />
     </Layout>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { clearCache } from '../cache';
 
 // Toast Component
 const Toast = ({ message, type, onClose }) => {
@@ -133,6 +134,7 @@ const AddUserModal = ({ closeModal, refreshUsers }) => {
       showToast('User created successfully!', 'success');
       
       setTimeout(() => {
+        clearCache('users_list');
         refreshUsers();
         closeModal();
       }, 1500);

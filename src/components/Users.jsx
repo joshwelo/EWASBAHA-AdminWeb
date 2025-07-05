@@ -5,7 +5,8 @@ import Layout from './Layout';
 import AddUserModal from './AddUserModal';
 import EditUserModal from './EditUserModal';
 import VolunteerApplicationModal from './VolunteerApplicationModal';
-import { getCache, setCache } from '../cache';
+import { getCache, setCache, clearCache } from '../cache';
+import { Tooltip } from 'react-tooltip';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -112,6 +113,7 @@ const Users = () => {
     if (selectedUser) {
       try {
         await deleteDoc(doc(db, 'users', selectedUser.id));
+        clearCache('users_list');
         fetchUsers();
         setDeleteModalOpen(false);
         setSelectedUser(null);
@@ -147,7 +149,18 @@ const Users = () => {
         <div className="px-6 py-6">
           <div className="flex flex-wrap justify-between gap-3">
             <div className="flex flex-col gap-3">
-              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Users</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Users</p>
+                <button
+                  data-tooltip-id="users-tooltip"
+                  data-tooltip-content="View, search, and filter all users. Add, edit, or delete user accounts. Manage user roles and verification. Click 'View Application' to see volunteer applications."
+                  className="ml-1 text-blue-500 hover:text-blue-700 focus:outline-none"
+                  type="button"
+                  aria-label="How to use Users page"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="#e0e7ff"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#3730a3" fontFamily="Arial" dy="-1">?</text></svg>
+                </button>
+              </div>
               <p className="text-[#60758a] text-sm font-normal leading-normal">
                 Manage user accounts, roles, and permissions.
               </p>
@@ -360,8 +373,8 @@ const Users = () => {
           </div>
         </div>
       </div>
-      {isAddModalOpen && <AddUserModal closeModal={() => setAddModalOpen(false)} refreshUsers={fetchUsers} />}
-      {isEditModalOpen && <EditUserModal user={selectedUser} closeModal={() => setEditModalOpen(false)} refreshUsers={fetchUsers} />}
+      {isAddModalOpen && <AddUserModal closeModal={() => setAddModalOpen(false)} refreshUsers={() => { clearCache('users_list'); fetchUsers(); }} />}
+      {isEditModalOpen && <EditUserModal user={selectedUser} closeModal={() => setEditModalOpen(false)} refreshUsers={() => { clearCache('users_list'); fetchUsers(); }} />}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
           <div className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -400,6 +413,7 @@ const Users = () => {
           refreshUsers={fetchUsers}
         />
       )}
+      <Tooltip id="users-tooltip" place="right" />
     </Layout>
   );
 };

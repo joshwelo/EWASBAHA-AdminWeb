@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { clearCache } from '../cache';
 
 // Toast Component
 const Toast = ({ message, type, onClose }) => {
@@ -114,6 +115,7 @@ const EditUserModal = ({ user, closeModal, refreshUsers }) => {
       showToast('User updated successfully!', 'success');
       
       setTimeout(() => {
+        clearCache('users_list');
         refreshUsers();
         closeModal();
       }, 1500);

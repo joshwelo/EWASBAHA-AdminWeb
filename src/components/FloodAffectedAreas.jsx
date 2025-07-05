@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
-import { getCache, setCache } from '../cache';
+import { getCache, setCache, clearCache } from '../cache';
+import { Tooltip } from 'react-tooltip';
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -31,7 +32,6 @@ const FloodAffectedAreas = () => {
   const [routes, setRoutes] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [drawing, setDrawing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,6 +127,7 @@ const FloodAffectedAreas = () => {
 
   useEffect(() => {
     fetchRoutes();
+    fetchHistoryData();
   }, [viewMode]);
 
   // Handle map clicks
@@ -174,12 +175,15 @@ const FloodAffectedAreas = () => {
         isArchived: true,
         archivedAt: String(Date.now())
       });
-      
+      clearCache('flood_routes_active');
+      clearCache('flood_routes_archived');
+      clearCache('flood_history');
       setModalOpen(false);
       setForm(initialForm);
       setSelectedRoute(null);
       setHighlightedRouteId(null);
       fetchRoutes();
+      fetchHistoryData();
     } catch (error) {
       alert('Error archiving flood route: ' + error.message);
     }
@@ -195,7 +199,11 @@ const FloodAffectedAreas = () => {
         isArchived: false,
         restoredAt: String(Date.now())
       });
+      clearCache('flood_routes_active');
+      clearCache('flood_routes_archived');
+      clearCache('flood_history');
       fetchRoutes();
+      fetchHistoryData();
     } catch (error) {
       alert('Error restoring flood route: ' + error.message);
     }
@@ -208,11 +216,15 @@ const FloodAffectedAreas = () => {
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'floodLocations', id));
+      clearCache('flood_routes_active');
+      clearCache('flood_routes_archived');
+      clearCache('flood_history');
       setModalOpen(false);
       setForm(initialForm);
       setSelectedRoute(null);
       setHighlightedRouteId(null);
       fetchRoutes();
+      fetchHistoryData();
     } catch (error) {
       alert('Error deleting flood route: ' + error.message);
     }
@@ -235,8 +247,14 @@ const FloodAffectedAreas = () => {
           ...data,
           updatedAt: String(Date.now())
         });
+        clearCache('flood_routes_active');
+        clearCache('flood_routes_archived');
+        clearCache('flood_history');
       } else {
         await addDoc(collection(db, 'floodLocations'), data);
+        clearCache('flood_routes_active');
+        clearCache('flood_routes_archived');
+        clearCache('flood_history');
       }
 
       setModalOpen(false);
@@ -244,6 +262,7 @@ const FloodAffectedAreas = () => {
       setSelectedRoute(null);
       setHighlightedRouteId(null);
       fetchRoutes();
+      fetchHistoryData();
     } catch (err) {
       alert('Error saving flood route: ' + err.message);
     }
@@ -295,12 +314,6 @@ const FloodAffectedAreas = () => {
         }
       }, 100);
     }
-  };
-
-  // Open history modal
-  const handleOpenHistory = () => {
-    setHistoryModalOpen(true);
-    fetchHistoryData();
   };
 
   const formatTimestamp = (timestamp) => {
@@ -382,21 +395,34 @@ const FloodAffectedAreas = () => {
     };
   };
 
+  useEffect(() => {
+    if (map) {
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 200);
+    }
+  }, [modalOpen, map]);
+
   return (
     <Layout>
       <div className="w-full h-screen flex flex-col">
         <div className="px-6 py-6 flex justify-between items-center">
           <div className="flex flex-col gap-3">
-            <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Flood Affected Areas</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Flood Affected Areas</p>
+              <button
+                data-tooltip-id="flood-tooltip"
+                data-tooltip-content="View, add, and archive flood-affected routes. Click on the map to draw a new route. Use the sidebar to edit or archive routes. Toggle between active, archived, and all routes."
+                className="ml-1 text-blue-500 hover:text-blue-700 focus:outline-none"
+                type="button"
+                aria-label="How to use Flood Affected Areas page"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="#e0e7ff"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#3730a3" fontFamily="Arial" dy="-1">?</text></svg>
+              </button>
+            </div>
             <p className="text-[#60758a] text-sm font-normal leading-normal">Visual interface to mark and verify affected routes.</p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={handleOpenHistory}
-              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none font-medium"
-            >
-              View History
-            </button>
             <button
               onClick={handleAddNew}
               className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none font-medium"
@@ -407,7 +433,7 @@ const FloodAffectedAreas = () => {
         </div>
         
         {/* View Mode Toggle */}
-        <div className="px-6 pb-4">
+        <div className="px-6 pb-4 max">
           <div className="flex gap-2">
             <button
               onClick={() => setViewMode('active')}
@@ -447,93 +473,95 @@ const FloodAffectedAreas = () => {
             modalOpen ? 'lg:grid-cols-[1fr_400px]' : 'lg:grid-cols-4'
           }`}>
             <div className={`h-full ${modalOpen ? '' : 'lg:col-span-3'}`}>
-              <MapContainer
-                center={center}
-                zoom={12}
-                style={containerStyle}
-                ref={setMap}
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                {/* Map click handler */}
-                <MapClickHandler drawing={drawing} onMapClick={onMapClick} />
-                {/* Render routes */}
-                {routes.map(route => {
-                  const style = getRouteStyle(route);
-                  const circleProps = getCircleForRoute(route);
-                  const isHighlighted = route.id === highlightedRouteId;
-                  return (
-                    <React.Fragment key={route.id}>
-                      {/* Route polyline */}
-                      {route.routePoints && route.routePoints.length >= 2 && (
-                        <Polyline
-                          positions={route.routePoints.map(pt => [
-                            parseFloat(pt.latitude),
-                            parseFloat(pt.longitude)
-                          ])}
-                          color={style.color}
-                          weight={4}
-                          opacity={0.8}
-                        />
-                      )}
-                      {/* Route circle */}
-                      {circleProps && (
-                        <Circle
-                          center={circleProps.center}
-                          radius={circleProps.radius}
-                          pathOptions={{
-                            fillColor: style.fillColor,
-                            fillOpacity: 0.3,
-                            color: style.color,
-                            opacity: 0.8,
-                            weight: 3
-                          }}
-                        />
-                      )}
-                      {/* Start marker */}
-                      {route.routePoints && route.routePoints.length > 0 && (
-                        <Marker
-                          position={[
-                            parseFloat(route.routePoints[0].latitude),
-                            parseFloat(route.routePoints[0].longitude)
-                          ]}
-                          eventHandlers={{
-                            click: () => handleHighlightRoute(route)
-                          }}
-                        />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-                {/* Current drawing */}
-                {modalOpen && form.routePoints.length > 0 && (
-                  <Polyline
-                    positions={form.routePoints.map(pt => [
-                      parseFloat(pt.latitude),
-                      parseFloat(pt.longitude)
-                    ])}
-                    color="#38a169"
-                    weight={4}
-                    opacity={0.8}
+              <div style={{ height: '500px', width: '100%' }}>
+                <MapContainer
+                  center={center}
+                  zoom={12}
+                  style={{ height: '100%', width: '100%' }}
+                  ref={setMap}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
-                )}
-                {modalOpen && form.routePoints.map((pt, idx) => (
-                  <Marker
-                    key={idx}
-                    position={[
-                      parseFloat(pt.latitude),
-                      parseFloat(pt.longitude)
-                    ]}
-                  />
-                ))}
-              </MapContainer>
+                  {/* Map click handler */}
+                  <MapClickHandler drawing={drawing} onMapClick={onMapClick} />
+                  {/* Render routes */}
+                  {routes.map(route => {
+                    const style = getRouteStyle(route);
+                    const circleProps = getCircleForRoute(route);
+                    const isHighlighted = route.id === highlightedRouteId;
+                    return (
+                      <React.Fragment key={route.id}>
+                        {/* Route polyline */}
+                        {route.routePoints && route.routePoints.length >= 2 && (
+                          <Polyline
+                            positions={route.routePoints.map(pt => [
+                              parseFloat(pt.latitude),
+                              parseFloat(pt.longitude)
+                            ])}
+                            color={style.color}
+                            weight={4}
+                            opacity={0.8}
+                          />
+                        )}
+                        {/* Route circle */}
+                        {circleProps && (
+                          <Circle
+                            center={circleProps.center}
+                            radius={circleProps.radius}
+                            pathOptions={{
+                              fillColor: style.fillColor,
+                              fillOpacity: 0.3,
+                              color: style.color,
+                              opacity: 0.8,
+                              weight: 3
+                            }}
+                          />
+                        )}
+                        {/* Start marker */}
+                        {route.routePoints && route.routePoints.length > 0 && (
+                          <Marker
+                            position={[
+                              parseFloat(route.routePoints[0].latitude),
+                              parseFloat(route.routePoints[0].longitude)
+                            ]}
+                            eventHandlers={{
+                              click: () => handleHighlightRoute(route)
+                            }}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {/* Current drawing */}
+                  {modalOpen && form.routePoints.length > 0 && (
+                    <Polyline
+                      positions={form.routePoints.map(pt => [
+                        parseFloat(pt.latitude),
+                        parseFloat(pt.longitude)
+                      ])}
+                      color="#38a169"
+                      weight={4}
+                      opacity={0.8}
+                    />
+                  )}
+                  {modalOpen && form.routePoints.map((pt, idx) => (
+                    <Marker
+                      key={idx}
+                      position={[
+                        parseFloat(pt.latitude),
+                        parseFloat(pt.longitude)
+                      ]}
+                    />
+                  ))}
+                </MapContainer>
+              </div>
             </div>
             
             {/* Sidebar with updated content - always visible */}
             {!modalOpen && (
-              <div className="h-full">
+              <div className="max-h-[500px]">
                 <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
                   <p className="text-[#111418] text-base font-medium leading-normal mb-4">
                     {viewMode === 'active' ? 'Active' : viewMode === 'archived' ? 'Archived' : 'All'} Routes ({routes.length})
@@ -701,230 +729,153 @@ const FloodAffectedAreas = () => {
           </div>
         </div>
 
-        {/* Right-side drawer for add/edit route */}
-        {modalOpen && (
-          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 transition-transform duration-300 transform translate-x-0 flex flex-col">
-            <div className="p-6 flex-1 overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">
-                  {selectedRoute ? 'Edit Flood Route' : 'Add New Flood Route'}
-                </h2>
-                <button
-                  onClick={() => { setModalOpen(false); setForm(initialForm); setSelectedRoute(null); setDrawing(false); }}
-                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                  aria-label="Close Drawer"
-                >
-                  &times;
-                </button>
-              </div>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Route Points</label>
-                  <div className="flex flex-col gap-2">
-                    {form.routePoints.length === 0 && <span className="text-xs text-gray-400">Click on the map to add points.</span>}
-                    {form.routePoints.map((pt, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs">
-                        <span className="flex-1">
-                          Point {idx + 1}: ({parseFloat(pt.latitude).toFixed(5)}, {parseFloat(pt.longitude).toFixed(5)})
-                        </span>
-                        <button type="button" className="text-red-500 hover:underline" onClick={() => handleRemovePoint(idx)}>Remove</button>
-                      </div>
-                    ))}
+        {/* History Section at the bottom */}
+        <div className="w-full bg-white border-t border-gray-200 shadow-inner mt-4 p-6">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Flood Routes History</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Active Routes */}
+            <div>
+              <h3 className="text-lg font-medium text-green-700 mb-3">
+                Active Routes ({historyData.active.length})
+              </h3>
+              <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                {historyData.active.map(route => (
+                  <div key={route.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="font-medium text-sm text-green-800">
+                      Route {route.id.substring(0, 8)}...
+                    </div>
+                    <div className="text-xs text-green-600 mt-1">
+                      Points: {route.routePoints?.length || 0}
+                    </div>
+                    <div className="text-xs text-green-500 mt-1">
+                      Created: {formatTimestamp(route.timestamp)}
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  {!drawing && (
-                    <button
-                      type="button"
-                      className="flex-1 px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onClick={handleStartDrawing}
-                    >
-                      Edit Points
-                    </button>
-                  )}
-                  {drawing && (
-                    <button
-                      type="button"
-                      className="flex-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                      onClick={handleStopDrawing}
-                    >
-                      Stop Editing Points
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    disabled={loading || form.routePoints.length < 2}
-                  >
-                    {loading ? 'Saving...' : (selectedRoute ? 'Update Route' : 'Add Route')}
-                  </button>
-                </div>
-              </form>
+                ))}
+                {historyData.active.length === 0 && (
+                  <div className="text-gray-500 text-sm text-center py-4">No active routes</div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* History Modal */}
-        {historyModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-semibold text-gray-800">Flood Routes History</h2>
-                  <button
-                    onClick={() => setHistoryModalOpen(false)}
-                    className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                  >
-                    &times;
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 overflow-y-auto max-h-96">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Active Routes */}
-                  <div>
-                    <h3 className="text-lg font-medium text-green-700 mb-3">
-                      Active Routes ({historyData.active.length})
-                    </h3>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {historyData.active.map(route => (
-                        <div key={route.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
-                          <div className="font-medium text-sm text-green-800">
-                            Route {route.id.substring(0, 8)}...
-                          </div>
-                          <div className="text-xs text-green-600 mt-1">
-                            Points: {route.routePoints?.length || 0}
-                          </div>
-                          <div className="text-xs text-green-500 mt-1">
-                            Created: {formatTimestamp(route.timestamp)}
-                          </div>
-                        </div>
-                      ))}
-                      {historyData.active.length === 0 && (
-                        <div className="text-gray-500 text-sm text-center py-4">No active routes</div>
-                      )}
+            {/* Archived Routes */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-700 mb-3">
+                Archived Routes ({historyData.archived.length})
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {historyData.archived.map(route => (
+                  <div key={route.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="font-medium text-sm text-gray-800">
+                      Route {route.id.substring(0, 8)}...
                     </div>
-                  </div>
-
-                  {/* Archived Routes */}
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-700 mb-3">
-                      Archived Routes ({historyData.archived.length})
-                    </h3>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {historyData.archived.map(route => (
-                        <div key={route.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="font-medium text-sm text-gray-800">
-                            Route {route.id.substring(0, 8)}...
-                          </div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            Points: {route.routePoints?.length || 0}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Created: {formatTimestamp(route.timestamp)}
-                          </div>
-                          {route.archivedAt && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              Archived: {formatTimestamp(route.archivedAt)}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {historyData.archived.length === 0 && (
-                        <div className="text-gray-500 text-sm text-center py-4">No archived routes</div>
-                      )}
+                    <div className="text-xs text-gray-600 mt-1">
+                      Points: {route.routePoints?.length || 0}
                     </div>
-                  </div>
-
-                  {/* Timeline View */}
-                  <div>
-                    <h3 className="text-lg font-medium text-blue-700 mb-3">
-                      Timeline ({historyData.all.length})
-                    </h3>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {historyData.all.map(route => (
-                        <div key={route.id} className={`p-3 rounded-lg border ${
-                          route.isArchived 
-                            ? 'bg-gray-50 border-gray-200' 
-                            : 'bg-blue-50 border-blue-200'
-                        }`}>
-                          <div className="flex items-center gap-2">
-                            <div className={`font-medium text-sm ${
-                              route.isArchived ? 'text-gray-800' : 'text-blue-800'
-                            }`}>
-                              Route {route.id.substring(0, 8)}...
-                            </div>
-                            <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                              route.isArchived 
-                                ? 'bg-gray-200 text-gray-700' 
-                                : 'bg-green-200 text-green-700'
-                            }`}>
-                              {route.isArchived ? 'Archived' : 'Active'}
-                            </span>
-                          </div>
-                          <div className={`text-xs mt-1 ${
-                            route.isArchived ? 'text-gray-600' : 'text-blue-600'
-                          }`}>
-                            Points: {route.routePoints?.length || 0}
-                          </div>
-                          <div className={`text-xs mt-1 ${
-                            route.isArchived ? 'text-gray-500' : 'text-blue-500'
-                          }`}>
-                            Created: {formatTimestamp(route.timestamp)}
-                          </div>
-                          {route.archivedAt && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              Archived: {formatTimestamp(route.archivedAt)}
-                            </div>
-                          )}
-                          {route.updatedAt && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              Updated: {formatTimestamp(route.updatedAt)}
-                            </div>
-                          )}
-                          {route.restoredAt && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              Restored: {formatTimestamp(route.restoredAt)}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {historyData.all.length === 0 && (
-                        <div className="text-gray-500 text-sm text-center py-4">No routes found</div>
-                      )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      Created: {formatTimestamp(route.timestamp)}
                     </div>
-                  </div>
-                </div>
-                
-                {/* Summary Statistics */}
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h3 className="text-lg font-medium text-gray-800 mb-3">Summary Statistics</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-3 bg-green-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">{historyData.active.length}</div>
-                      <div className="text-sm text-green-700">Active Routes</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-gray-600">{historyData.archived.length}</div>
-                      <div className="text-sm text-gray-700">Archived Routes</div>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600">{historyData.all.length}</div>
-                      <div className="text-sm text-blue-700">Total Routes</div>
-                    </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-lg">
-                      <div className="text-2xl font-bold text-purple-600">
-                        {historyData.all.reduce((sum, route) => sum + (route.routePoints?.length || 0), 0)}
+                    {route.archivedAt && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        Archived: {formatTimestamp(route.archivedAt)}
                       </div>
-                      <div className="text-sm text-purple-700">Total Points</div>
-                    </div>
+                    )}
                   </div>
-                </div>
+                ))}
+                {historyData.archived.length === 0 && (
+                  <div className="text-gray-500 text-sm text-center py-4">No archived routes</div>
+                )}
+              </div>
+            </div>
+
+            {/* Timeline View */}
+            <div>
+              <h3 className="text-lg font-medium text-blue-700 mb-3">
+                Timeline ({historyData.all.length})
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {historyData.all.map(route => (
+                  <div key={route.id} className={`p-3 rounded-lg border ${
+                    route.isArchived 
+                      ? 'bg-gray-50 border-gray-200' 
+                      : 'bg-blue-50 border-blue-200'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`font-medium text-sm ${
+                        route.isArchived ? 'text-gray-800' : 'text-blue-800'
+                      }`}>
+                        Route {route.id.substring(0, 8)}...
+                      </div>
+                      <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                        route.isArchived 
+                          ? 'bg-gray-200 text-gray-700' 
+                          : 'bg-green-200 text-green-700'
+                      }`}>
+                        {route.isArchived ? 'Archived' : 'Active'}
+                      </span>
+                    </div>
+                    <div className={`text-xs mt-1 ${
+                      route.isArchived ? 'text-gray-600' : 'text-blue-600'
+                    }`}>
+                      Points: {route.routePoints?.length || 0}
+                    </div>
+                    <div className={`text-xs mt-1 ${
+                      route.isArchived ? 'text-gray-500' : 'text-blue-500'
+                    }`}>
+                      Created: {formatTimestamp(route.timestamp)}
+                    </div>
+                    {route.archivedAt && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        Archived: {formatTimestamp(route.archivedAt)}
+                      </div>
+                    )}
+                    {route.updatedAt && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        Updated: {formatTimestamp(route.updatedAt)}
+                      </div>
+                    )}
+                    {route.restoredAt && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        Restored: {formatTimestamp(route.restoredAt)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {historyData.all.length === 0 && (
+                  <div className="text-gray-500 text-sm text-center py-4">No routes found</div>
+                )}
               </div>
             </div>
           </div>
-        )}
+
+          {/* Summary Statistics */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h3 className="text-lg font-medium text-gray-800 mb-3">Summary Statistics</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-green-50 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">{historyData.active.length}</div>
+                <div className="text-sm text-green-700">Active Routes</div>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-gray-600">{historyData.archived.length}</div>
+                <div className="text-sm text-gray-700">Archived Routes</div>
+              </div>
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">{historyData.all.length}</div>
+                <div className="text-sm text-blue-700">Total Routes</div>
+              </div>
+              <div className="text-center p-3 bg-purple-50 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">
+                  {historyData.all.reduce((sum, route) => sum + (route.routePoints?.length || 0), 0)}
+                </div>
+                <div className="text-sm text-purple-700">Total Points</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+      {/* Place Tooltip at the end of the component */}
+      <Tooltip id="flood-tooltip" place="right" />
     </Layout>
   );
 };

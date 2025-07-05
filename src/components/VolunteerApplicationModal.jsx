@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { clearCache } from '../cache';
 
 const VolunteerApplicationModal = ({ isOpen, onClose, application, loading, error, refreshUsers }) => {
   const [imageLoading, setImageLoading] = useState(true);
@@ -31,7 +32,7 @@ const VolunteerApplicationModal = ({ isOpen, onClose, application, loading, erro
       await updateDoc(doc(db, 'users', userId), { applicationStatus: 'approved' });
       await updateDoc(doc(db, 'volunteerApplications', userId), { applicationStatus: 'approved', notes: '' });
       setActionSuccess('Application approved successfully.');
-      if (refreshUsers) refreshUsers();
+      if (refreshUsers) { clearCache('users_list'); refreshUsers(); }
     } catch (err) {
       setActionError('Failed to approve application.');
     } finally {
@@ -52,7 +53,7 @@ const VolunteerApplicationModal = ({ isOpen, onClose, application, loading, erro
       await updateDoc(doc(db, 'users', userId), { applicationStatus: 'rejected' });
       await updateDoc(doc(db, 'volunteerApplications', userId), { applicationStatus: 'rejected', notes: notes.trim() });
       setActionSuccess('Application rejected with notes.');
-      if (refreshUsers) refreshUsers();
+      if (refreshUsers) { clearCache('users_list'); refreshUsers(); }
     } catch (err) {
       setActionError('Failed to reject application.');
     } finally {

@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { getCache, setCache } from '../cache';
+import { getCache, setCache, clearCache } from '../cache';
+import { Tooltip } from 'react-tooltip';
 
 // Fix for default markers in Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -72,15 +73,108 @@ const MapClickHandler = ({ onMapClick, isActive }) => {
 // Component to handle map centering
 const MapController = ({ center, zoom }) => {
   const map = useMap();
-  
   useEffect(() => {
     if (center && zoom) {
       map.setView(center, zoom);
     }
   }, [map, center, zoom]);
-  
   return null;
 };
+
+// MarkerWithPopup subcomponent for handling popup open state
+const MarkerWithPopup = React.memo(({ center, volunteers, users, openPopupId, setOpenPopupId, markerRef }) => {
+  useEffect(() => {
+    if (openPopupId === center.id && markerRef.current) {
+      markerRef.current.openPopup();
+    }
+  }, [openPopupId, center.id, markerRef]);
+
+  return (
+    <Marker
+      position={[center.latitude, center.longitude]}
+      icon={blueIcon}
+      ref={markerRef}
+      eventHandlers={{
+        popupclose: () => setOpenPopupId(null),
+        click: () => setOpenPopupId(center.id),
+      }}
+    >
+      <Popup maxWidth={400} className="custom-popup">
+        <div className="w-[350px] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
+          <div className="bg-blue-600 text-white p-3 rounded-t-lg">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-lg">{center.centerName}</h3>
+            </div>
+            <div className="text-xs mt-1">Manager: {center.campManager}</div>
+            <div className="text-xs">Contact: {center.contactNum}</div>
+          </div>
+          <div className="p-3 flex flex-col gap-2">
+            <div className="text-xs text-gray-700">Capacity: {center.capacityFam || 0} families, {center.capacityInd || 0} individuals</div>
+            <div className="text-xs text-gray-700">Classrooms: {center.numClassroom || 0}</div>
+            <div className="text-xs text-gray-400">({center.latitude ? Number(center.latitude).toFixed(4) : 'N/A'}, {center.longitude ? Number(center.longitude).toFixed(4) : 'N/A'})</div>
+            <div className="mt-2">
+              <div className="font-semibold text-sm mb-1">Assigned Volunteers</div>
+              {center.assignedVolunteers && center.assignedVolunteers.length > 0 ? (
+                <ul className="ml-2 list-disc">
+                  {center.assignedVolunteers.map(volId => {
+                    const vol = volunteers.find(v => v.id === volId);
+                    const user = vol ? users.find(u => u.id === vol.userId) : null;
+                    return (
+                      <li key={volId} className="mb-1">
+                        <span className="font-medium text-gray-700">{user ? `${user.firstName} ${user.lastName}` : volId}</span>
+                        {vol && vol.choices && vol.choices.length > 0 && (
+                          <span className="ml-1 text-blue-600">[{vol.choices.join(', ')}]</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <span className="ml-2 text-gray-400">None assigned</span>
+              )}
+            </div>
+            <div className="mt-2">
+              <div className="font-semibold text-sm mb-1">Assign Volunteers</div>
+              <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                {volunteers.length === 0 ? (
+                  <div className="text-xs text-gray-400">No volunteers available</div>
+                ) : (
+                  volunteers.map(vol => {
+                    const user = users.find(u => u.id === vol.userId);
+                    const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
+                    return (
+                      <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={center.assignedVolunteers && center.assignedVolunteers.includes(vol.id)}
+                          onChange={async e => {
+                            let updated;
+                            if (e.target.checked) {
+                              updated = [...(center.assignedVolunteers || []), vol.id];
+                            } else {
+                              updated = (center.assignedVolunteers || []).filter(id => id !== vol.id);
+                            }
+                            await updateDoc(doc(db, 'evacuationCenter', center.id), { assignedVolunteers: updated });
+                            clearCache('evacuation_centers');
+                            fetchCenters();
+                          }}
+                        />
+                        <span>{name}</span>
+                        {vol.choices && vol.choices.length > 0 && (
+                          <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
+                        )}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+});
 
 const EvacuationCenter = () => {
   const [centers, setCenters] = useState([]);
@@ -98,7 +192,9 @@ const EvacuationCenter = () => {
   const [selectedCenter, setSelectedCenter] = useState(null);
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [mapZoom, setMapZoom] = useState(12);
+  const [openPopupId, setOpenPopupId] = useState(null);
   const mapRef = useRef();
+  const markerRefs = useRef({});
 
   // Fetch evacuation centers
   const fetchCenters = async (forceRefresh = false) => {
@@ -233,6 +329,7 @@ const EvacuationCenter = () => {
       } else {
         await addDoc(collection(db, 'evacuationCenter'), data);
       }
+      clearCache('evacuation_centers');
       setForm(initialForm);
       setEditingId(null);
       setIsModalOpen(false);
@@ -252,6 +349,7 @@ const EvacuationCenter = () => {
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'evacuationCenter', id));
+      clearCache('evacuation_centers');
       fetchCenters();
       if (editingId === id) {
         setForm(initialForm);
@@ -289,7 +387,18 @@ const EvacuationCenter = () => {
         <div className="px-6 py-6">
           <div className="flex flex-wrap justify-between gap-3">
             <div className="flex flex-col gap-3">
-              <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Evacuation Centers</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Evacuation Centers</p>
+                <button
+                  data-tooltip-id="evacuation-tooltip"
+                  data-tooltip-content="View, add, and edit evacuation centers. Click on the map to set a location. Assign volunteers to centers. Use the search to find centers by name or manager."
+                  className="ml-1 text-blue-500 hover:text-blue-700 focus:outline-none"
+                  type="button"
+                  aria-label="How to use Evacuation Centers page"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="#e0e7ff"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#3730a3" fontFamily="Arial" dy="-1">?</text></svg>
+                </button>
+              </div>
               <p className="text-[#60758a] text-sm font-normal leading-normal">Manage and view evacuation centers on the map. Click on the map to place a marker, then click "Add New Center".</p>
             </div>
             <button 
@@ -322,89 +431,22 @@ const EvacuationCenter = () => {
                     isActive={true}
                   />
                   
-                  {/* Existing evacuation centers */}
-                  {filteredCenters.map((center) => (
-                    center.latitude && center.longitude && (
-                      <Marker
+                  {/* Existing evacuation centers with popup control */}
+                  {filteredCenters.map((center) => {
+                    if (!center.latitude || !center.longitude) return null;
+                    if (!markerRefs.current[center.id]) markerRefs.current[center.id] = React.createRef();
+                    return (
+                      <MarkerWithPopup
                         key={center.id}
-                        position={[center.latitude, center.longitude]}
-                        icon={blueIcon}
-                      >
-                        <Popup maxWidth={400} className="custom-popup">
-                          <div className="w-[350px] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
-                            <div className="bg-blue-600 text-white p-3 rounded-t-lg">
-                              <div className="flex justify-between items-center">
-                                <h3 className="font-bold text-lg">{center.centerName}</h3>
-                              </div>
-                              <div className="text-xs mt-1">Manager: {center.campManager}</div>
-                              <div className="text-xs">Contact: {center.contactNum}</div>
-                            </div>
-                            <div className="p-3 flex flex-col gap-2">
-                              <div className="text-xs text-gray-700">Capacity: {center.capacityFam || 0} families, {center.capacityInd || 0} individuals</div>
-                              <div className="text-xs text-gray-700">Classrooms: {center.numClassroom || 0}</div>
-                              <div className="text-xs text-gray-400">({center.latitude ? Number(center.latitude).toFixed(4) : 'N/A'}, {center.longitude ? Number(center.longitude).toFixed(4) : 'N/A'})</div>
-                              <div className="mt-2">
-                                <div className="font-semibold text-sm mb-1">Assigned Volunteers</div>
-                                {center.assignedVolunteers && center.assignedVolunteers.length > 0 ? (
-                                  <ul className="ml-2 list-disc">
-                                    {center.assignedVolunteers.map(volId => {
-                                      const vol = volunteers.find(v => v.id === volId);
-                                      const user = vol ? users.find(u => u.id === vol.userId) : null;
-                                      return (
-                                        <li key={volId} className="mb-1">
-                                          <span className="font-medium text-gray-700">{user ? `${user.firstName} ${user.lastName}` : volId}</span>
-                                          {vol && vol.choices && vol.choices.length > 0 && (
-                                            <span className="ml-1 text-blue-600">[{vol.choices.join(', ')}]</span>
-                                          )}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                ) : (
-                                  <span className="ml-2 text-gray-400">None assigned</span>
-                                )}
-                              </div>
-                              <div className="mt-2">
-                                <div className="font-semibold text-sm mb-1">Assign Volunteers</div>
-                                <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
-                                  {volunteers.length === 0 ? (
-                                    <div className="text-xs text-gray-400">No volunteers available</div>
-                                  ) : (
-                                    volunteers.map(vol => {
-                                      const user = users.find(u => u.id === vol.userId);
-                                      const name = user ? `${user.firstName} ${user.lastName}` : vol.userId;
-                                      return (
-                                        <label key={vol.id} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={center.assignedVolunteers && center.assignedVolunteers.includes(vol.id)}
-                                            onChange={async e => {
-                                              let updated;
-                                              if (e.target.checked) {
-                                                updated = [...(center.assignedVolunteers || []), vol.id];
-                                              } else {
-                                                updated = (center.assignedVolunteers || []).filter(id => id !== vol.id);
-                                              }
-                                              await updateDoc(doc(db, 'evacuationCenter', center.id), { assignedVolunteers: updated });
-                                              fetchCenters();
-                                            }}
-                                          />
-                                          <span>{name}</span>
-                                          {vol.choices && vol.choices.length > 0 && (
-                                            <span className="ml-2 text-blue-600">[{vol.choices.join(', ')}]</span>
-                                          )}
-                                        </label>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    )
-                  ))}
+                        center={center}
+                        volunteers={volunteers}
+                        users={users}
+                        openPopupId={openPopupId}
+                        setOpenPopupId={setOpenPopupId}
+                        markerRef={markerRefs.current[center.id]}
+                      />
+                    );
+                  })}
                   
                   {/* Temporary marker for new location */}
                   {selectedMarker && !isModalOpen && !showAddForm && (
@@ -631,6 +673,7 @@ const EvacuationCenter = () => {
                             if (center.latitude && center.longitude) {
                               setMapCenter([Number(center.latitude), Number(center.longitude)]);
                               setMapZoom(16);
+                              setOpenPopupId(center.id);
                             }
                           }}>
                             <div className="font-semibold text-sm text-gray-800 hover:text-blue-600">{center.centerName}</div>
@@ -858,6 +901,7 @@ const EvacuationCenter = () => {
           </div>
         )}
       </div>
+      <Tooltip id="evacuation-tooltip" place="right" />
     </Layout>
   );
 };
