@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import './test-env'; // Test environment variables
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Users from './components/Users';

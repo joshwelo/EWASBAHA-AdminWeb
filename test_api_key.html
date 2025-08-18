@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather API Key Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌤️ Weather API Key Test</h1>
+        <p>Use this page to test if your OpenWeatherMap API key is working correctly.</p>
+        
+        <div class="form-group">
+            <label for="apiKey">API Key:</label>
+            <input type="text" id="apiKey" placeholder="Enter your OpenWeatherMap API key" value="954a2ba5f1e3abd1d9850f12c33fff6d">
+        </div>
+        
+        <div class="form-group">
+            <label for="latitude">Latitude:</label>
+            <input type="number" id="latitude" placeholder="Enter latitude" value="-1.2921" step="any">
+        </div>
+        
+        <div class="form-group">
+            <label for="longitude">Longitude:</label>
+            <input type="number" id="longitude" placeholder="Enter longitude" value="36.8219" step="any">
+        </div>
+        
+        <div class="form-group">
+            <label for="units">Units:</label>
+            <select id="units">
+                <option value="metric">Metric (Celsius)</option>
+                <option value="imperial">Imperial (Fahrenheit)</option>
+            </select>
+        </div>
+        
+        <button onclick="testAPI()">🧪 Test API Key</button>
+        
+        <div id="result" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const latitude = document.getElementById('latitude').value;
+            const longitude = document.getElementById('longitude').value;
+            const units = document.getElementById('units').value;
+            
+            if (!apiKey || !latitude || !longitude) {
+                alert('Please enter API key, latitude, and longitude');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Testing API key... Please wait...';
+            
+            try {
+                const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=${units}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `✅ SUCCESS! API Key is working correctly.
+
+🌍 Coordinates: ${latitude}, ${longitude}
+🌡️ Current Temperature: ${data.current.temp}°${units === 'metric' ? 'C' : 'F'}
+🌤️ Weather: ${data.current.weather[0].main} - ${data.current.weather[0].description}
+💧 Humidity: ${data.current.humidity}%
+💨 Wind: ${data.current.wind_speed} ${units === 'metric' ? 'm/s' : 'mph'}
+📊 Pressure: ${data.current.pressure} hPa
+☀️ UV Index: ${data.current.uvi}
+🌅 Sunrise: ${new Date(data.daily[0].sunrise * 1000).toLocaleTimeString()}
+🌇 Sunset: ${new Date(data.daily[0].sunset * 1000).toLocaleTimeString()}
+
+📅 5-Day Forecast Available: ${data.daily.length} days
+⏰ Hourly Forecast Available: ${data.hourly.length} hours
+
+Full Response:
+${JSON.stringify(data, null, 2)}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `❌ ERROR: ${data.message}
+
+Status Code: ${response.status}
+Error Code: ${data.cod}
+
+Possible Solutions:
+• Wait 2-4 hours for new API keys to activate
+• Check if your account is verified
+• Verify the API key is correct
+• Ensure you have access to the Current Weather Data API
+
+Full Error Response:
+${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ NETWORK ERROR: ${error.message}
+
+This usually means:
+• No internet connection
+• CORS issues (try opening this page in a new tab)
+• Network timeout
+
+Try again or check your internet connection.`;
+            }
+        }
+        
+        // Auto-test on page load with current values
+        window.addEventListener('load', () => {
+            // Don't auto-test, let user click the button
+        });
+    </script>
+</body>
+</html> 
