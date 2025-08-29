@@ -1,44 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import Layout from './Layout';
 import { WEATHER_CONFIG, WEATHER_API } from '../config/weather';
+import { listAlerts, createAlert, updateAlert, deleteAlert, sendAlert } from '../services/alerts';
 
 const Alerts = () => {
   const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  const alerts = [
-    {
-      title: 'Flood Warning',
-      type: 'Warning',
-      status: 'Active',
-      createdAt: '2024-07-26 10:00 AM'
-    },
-    {
-      title: 'Severe Weather Alert',
-      type: 'Alert',
-      status: 'Active',
-      createdAt: '2024-07-25 03:00 PM'
-    },
-    {
-      title: 'Evacuation Notice',
-      type: 'Notice',
-      status: 'Inactive',
-      createdAt: '2024-07-24 09:00 AM'
-    },
-    {
-      title: 'Emergency Assistance Request',
-      type: 'Request',
-      status: 'Active',
-      createdAt: '2024-07-23 05:00 PM'
-    },
-    {
-      title: 'Safety Check-In',
-      type: 'Check-In',
-      status: 'Inactive',
-      createdAt: '2024-07-22 11:00 AM'
+  const [alerts, setAlerts] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newAlert, setNewAlert] = useState({
+    title: '',
+    body: '',
+    type: 'FLOOD_ALERT',
+    severity: 'WARNING',
+    targetArea: '',
+    timestamp: '',
+    sent: false
+  });
+
+  const WEATHER_CACHE_KEY = 'alerts_weather_cache_v1';
+  const WEATHER_CACHE_TTL_MS = WEATHER_CONFIG.REFRESH_INTERVAL_MINUTES * 60 * 1000;
+
+  const loadAlerts = async () => {
+    try {
+      const items = await listAlerts();
+      setAlerts(items);
+    } catch (e) {
+      console.error('Failed to load alerts', e);
     }
-  ];
+  };
 
   const fetchWeather = async () => {
     if (!WEATHER_CONFIG.API_KEY || WEATHER_CONFIG.API_KEY === "YOUR_OPENWEATHERMAP_API_KEY") {
@@ -50,6 +43,17 @@ const Alerts = () => {
     setError(null);
     
     try {
+      // Check cache first
+      const cached = localStorage.getItem(WEATHER_CACHE_KEY);
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < WEATHER_CACHE_TTL_MS) {
+          setWeather(data);
+          setLoading(false);
+          return;
+        }
+      }
+
       // Using OneCall API v3.0 for current weather and forecast
       const response = await fetch(
         `${WEATHER_API.ONECALL}?lat=${WEATHER_CONFIG.LATITUDE}&lon=${WEATHER_CONFIG.LONGITUDE}&appid=${WEATHER_CONFIG.API_KEY}&units=${WEATHER_CONFIG.UNITS}&lang=${WEATHER_CONFIG.LANGUAGE}`
@@ -67,6 +71,8 @@ const Alerts = () => {
       
       const data = await response.json();
       setWeather(data);
+      // Cache the data
+      localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
     } catch (err) {
       setError(err.message);
       console.error('Weather API Error:', err);
@@ -77,6 +83,7 @@ const Alerts = () => {
 
   useEffect(() => {
     fetchWeather();
+    loadAlerts();
     
     // Refresh weather based on configuration
     const interval = setInterval(fetchWeather, WEATHER_CONFIG.REFRESH_INTERVAL_MINUTES * 60 * 1000);
@@ -113,6 +120,57 @@ const Alerts = () => {
     });
   };
 
+  const handleOpenCreate = () => {
+    setNewAlert({
+      title: '',
+      body: '',
+      type: 'FLOOD_ALERT',
+      severity: 'WARNING',
+      targetArea: '',
+      timestamp: '',
+      sent: false
+    });
+    setShowCreateModal(true);
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await createAlert(newAlert);
+      setShowCreateModal(false);
+      await loadAlerts();
+    } catch (e2) {
+      console.error('Failed to create alert', e2);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSend = async (id) => {
+    setSaving(true);
+    try {
+      await sendAlert(id);
+      await loadAlerts();
+    } catch (e) {
+      console.error('Failed to send alert', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    setSaving(true);
+    try {
+      await deleteAlert(id);
+      setAlerts(prev => prev.filter(a => a.id !== id));
+    } catch (e) {
+      console.error('Failed to delete alert', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Layout>
       <div className="w-full h-full">
@@ -125,9 +183,6 @@ const Alerts = () => {
                 View and manage emergency alerts, warnings, and notifications.
               </p>
             </div>
-            <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal">
-              <span className="truncate">New Alert</span>
-            </button>
           </div>
         </div>
 
@@ -199,93 +254,87 @@ const Alerts = () => {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="pb-3">
-          <div className="flex border-b border-[#dbe0e6] px-6 gap-8">
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-[#dce8f3] text-[#111418] pb-[13px] pt-4" href="#">
-              <p className="text-[#111418] text-sm font-bold leading-normal tracking-[0.015em]">All</p>
-            </a>
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-[#60758a] pb-[13px] pt-4" href="#">
-              <p className="text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">Active</p>
-            </a>
-            <a className="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-[#60758a] pb-[13px] pt-4" href="#">
-              <p className="text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">Inactive</p>
-            </a>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="px-6 pb-6">
-          <div className="flex flex-col gap-4">
-            <label className="flex flex-col min-w-40 h-12 w-full">
-              <div className="flex w-full flex-1 items-stretch rounded-lg h-full">
-                <div className="text-[#60758a] flex border-none bg-[#f0f2f5] items-center justify-center pl-4 rounded-l-lg border-r-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" fill="currentColor" viewBox="0 0 256 256">
-                    <path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path>
-                  </svg>
+        {/* Alerts List */}
+        <div className="px-6 pb-12">
+          <div className="bg-white border rounded-lg">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="font-semibold">Alerts</div>
+              <button onClick={handleOpenCreate} className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#111418] text-white text-sm font-medium leading-normal">
+                <span className="truncate">New Alert</span>
+              </button>
+            </div>
+            <div className="divide-y">
+              {alerts.length === 0 && (
+                <div className="p-4 text-sm text-gray-500">No alerts yet.</div>
+              )}
+              {alerts.map(alert => (
+                <div key={alert.id} className="p-4 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{alert.title}</div>
+                    <div className="text-xs text-gray-500 mt-1">{alert.type} • {alert.severity} • {alert.targetArea}</div>
+                    <div className="text-xs text-gray-400 mt-1">{alert.timestamp}</div>
+                    {alert.body && <div className="text-sm text-gray-700 mt-2">{alert.body}</div>}
+                    {alert.sent && <div className="text-xs mt-2 text-green-700">Sent</div>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!alert.sent && (
+                      <button onClick={() => handleSend(alert.id)} disabled={saving} className="px-3 py-1.5 rounded-md text-white bg-blue-600 text-sm">Send</button>
+                    )}
+                    <button onClick={() => handleDelete(alert.id)} disabled={saving} className="px-3 py-1.5 rounded-md text-white bg-red-600 text-sm">Delete</button>
+                  </div>
                 </div>
-                <input
-                  placeholder="Search alerts"
-                  className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#111418] focus:outline-0 focus:ring-0 border-none bg-[#f0f2f5] focus:border-none h-full placeholder:text-[#60758a] px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal"
-                />
-              </div>
-            </label>
-          </div>
-        </div>
-
-        {/* Alerts Table */}
-        <div className="px-6 pb-6">
-          <div className="overflow-hidden rounded-lg border border-[#dbe0e6] bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-white border-b border-[#dbe0e6]">
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-[400px]">
-                      Title
-                    </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
-                      Type
-                    </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-[400px]">
-                      Created At
-                    </th>
-                    <th className="px-6 py-4 text-left text-[#111418] text-sm font-medium leading-normal w-60">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#dbe0e6]">
-                  {alerts.map((alert, index) => (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        {alert.title}
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal w-full">
-                          <span className="truncate">{alert.type}</span>
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 text-[#111418] text-sm font-normal leading-normal">
-                        <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#f0f2f5] text-[#111418] text-sm font-medium leading-normal w-full">
-                          <span className="truncate">{alert.status}</span>
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 text-[#60758a] text-sm font-normal leading-normal">
-                        {alert.createdAt}
-                      </td>
-                      <td className="px-6 py-4 text-[#60758a] text-sm font-bold leading-normal tracking-[0.015em]">
-                        View
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              ))}
             </div>
           </div>
         </div>
+
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateModal(false)} />
+            <div className="relative bg-white rounded-lg shadow-lg w-full max-w-lg mx-4">
+              <form onSubmit={handleCreate} className="p-6 space-y-4">
+                <div className="text-lg font-semibold">Create New Alert</div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title</label>
+                  <input value={newAlert.title} onChange={(e) => setNewAlert({ ...newAlert, title: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm"  required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Body</label>
+                  <textarea value={newAlert.body} onChange={(e) => setNewAlert({ ...newAlert, body: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm" rows={4}  required />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Type</label>
+                    <select value={newAlert.type} onChange={(e) => setNewAlert({ ...newAlert, type: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm">
+                      <option value="FLOOD_ALERT">FLOOD_ALERT</option>
+                      <option value="WEATHER_ALERT">WEATHER_ALERT</option>
+                      <option value="EVACUATION_NOTICE">EVACUATION_NOTICE</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Severity</label>
+                    <select value={newAlert.severity} onChange={(e) => setNewAlert({ ...newAlert, severity: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm">
+                      <option value="WARNING">WARNING</option>
+                      <option value="ALERT">ALERT</option>
+                      <option value="INFO">INFO</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Target Area</label>
+                    <input value={newAlert.targetArea} onChange={(e) => setNewAlert({ ...newAlert, targetArea: e.target.value })} className="w-full border rounded-md px-3 py-2 text-sm" placeholder="Sto. Tomas City" required />
+                  </div>
+                  
+                 </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm rounded-md border">Cancel</button>
+                  <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-md text-white bg-[#111418]">{saving ? 'Creating…' : 'Create'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
