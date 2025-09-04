@@ -24,6 +24,49 @@ const Alerts = () => {
   const WEATHER_CACHE_KEY = 'alerts_weather_cache_v1';
   const WEATHER_CACHE_TTL_MS = WEATHER_CONFIG.REFRESH_INTERVAL_MINUTES * 60 * 1000;
 
+  // Helper function to safely convert any timestamp to string
+  const safeTimestampToString = (timestamp) => {
+    if (!timestamp) return '';
+    
+    // If it's already a string, return as is
+    if (typeof timestamp === 'string') return timestamp;
+    
+    // If it's a Firestore timestamp object with seconds property
+    if (timestamp && typeof timestamp === 'object' && timestamp.seconds) {
+      try {
+        return new Date(timestamp.seconds * 1000).toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: '2-digit',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Manila'
+        }) + ' UTC+8';
+      } catch (e) {
+        return new Date(timestamp.seconds * 1000).toISOString();
+      }
+    }
+    
+    // If it's a regular Date object
+    if (timestamp instanceof Date) {
+      return timestamp.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Manila'
+      }) + ' UTC+8';
+    }
+    
+    // Fallback to string conversion
+    return String(timestamp);
+  };
+
   const loadAlerts = async () => {
     try {
       const items = await listAlerts();
@@ -272,7 +315,7 @@ const Alerts = () => {
                   <div className="min-w-0">
                     <div className="font-medium truncate">{alert.title}</div>
                     <div className="text-xs text-gray-500 mt-1">{alert.type} • {alert.severity} • {alert.targetArea}</div>
-                    <div className="text-xs text-gray-400 mt-1">{alert.timestamp}</div>
+                    <div className="text-xs text-gray-400 mt-1">{safeTimestampToString(alert.timestamp || alert.createdAt)}</div>
                     {alert.body && <div className="text-sm text-gray-700 mt-2">{alert.body}</div>}
                     {alert.sent && <div className="text-xs mt-2 text-green-700">Sent</div>}
                   </div>
@@ -340,4 +383,4 @@ const Alerts = () => {
   );
 };
 
-export default Alerts; 
+export default Alerts;
