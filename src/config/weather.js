@@ -9,8 +9,8 @@ export const WEATHER_CONFIG = {
   // City coordinates for weather forecast
   // The OneCall API v3.0 requires latitude and longitude
   // You can change these coordinates to any city you want
-  LATITUDE: 13.940560649028146,  // Nairobi, Kenya
-  LONGITUDE: 121.19740620904733,
+  LATITUDE: 14.097601,  // Nairobi, Kenya
+  LONGITUDE: 121.168155,
   
   // City display name (for UI purposes) , 
   CITY_NAME: "Lipa City, Batangas",

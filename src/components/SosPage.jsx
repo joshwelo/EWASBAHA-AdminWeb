@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc } from 'firebase/firestore';
@@ -147,6 +147,7 @@ const SosPage = () => {
   const [filterType, setFilterType] = useState('urgency');
   const [userLocation, setUserLocation] = useState({ lat: defaultCenter[0], lng: defaultCenter[1] });
   const [showResolvedModal, setShowResolvedModal] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('rescuers');
 
   // Calculate distance between two points using Haversine formula
@@ -189,7 +190,9 @@ const SosPage = () => {
   // Fetch SOS reports
   const fetchSosReports = async (forceRefresh = false) => {
     setLoading(true);
-    clearCache('sos_reports');
+    if (forceRefresh) {
+        clearCache('sos_reports');
+    }
     let reports = getCache('sos_reports');
     if (!reports || forceRefresh) {
       const snapshot = await getDocs(collection(db, 'sos_reports'));
@@ -294,9 +297,6 @@ const SosPage = () => {
     return null;
   };
 
-  //FIX 1: This function is now declarative. It only updates the state.
-  // The <MapController> component will react to the state change and update the map view.
-  // This prevents conflicts and ensures a single source of truth for map positioning.
   const navigateToSOS = (report) => {
     setSelectedReport(report);
     setSelectedRescuer(null);
@@ -319,36 +319,36 @@ const SosPage = () => {
     });
   };
 
-  // Assign multiple rescuers and volunteers
+  // MODIFIED: Assign a single rescuer and multiple volunteers
   const handleAssignUnits = async () => {
-    if ((!selectedRescuer && !selectedVolunteers.length) || !selectedReport) return;
+    if ((!selectedRescuer && selectedVolunteers.length === 0) || !selectedReport) return;
     setAssigning(true);
     try {
-      // Get existing units or initialize as empty arrays
-      const existingRescuers = selectedReport.rescueUnits || [];
-      const existingVolunteers = selectedReport.volunteerUnits || [];
+      const updatePayload = {};
 
-      // If a new rescuer is selected, it replaces any existing rescuer(s).
-      // Otherwise, keep the existing assigned rescuers.
-      const updatedRescuers = selectedRescuer ? [selectedRescuer] : existingRescuers;
-      
+      const existingVolunteers = selectedReport.volunteerUnits || [];
       const updatedVolunteers = [...new Set([...existingVolunteers, ...selectedVolunteers])];
-      
-      await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
-        rescueUnits: updatedRescuers,
-        volunteerUnits: updatedVolunteers,
-        status: 'responding',
-      });
+      updatePayload.volunteerUnits = updatedVolunteers;
+
+      if (selectedRescuer) {
+        updatePayload.rescueUnit = selectedRescuer;
+        updatePayload.status = 'pending';
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        await updateDoc(doc(db, 'sos_reports', selectedReport.id), updatePayload);
+      }
       
       const dispatchedRescuersCount = selectedRescuer ? 1 : 0;
       const dispatchedVolunteersCount = selectedVolunteers.length;
-      setMessage(`${dispatchedRescuersCount} rescuer(s) and ${dispatchedVolunteersCount} volunteer(s) dispatched and user notified.`);
+      setMessage(`${dispatchedRescuersCount} rescuer(s) and ${dispatchedVolunteersCount} volunteer(s) assigned. Status is now pending.`);
 
       setTimeout(() => setMessage(''), 3000);
       setSelectedReport(null);
       setSelectedRescuer(null);
       setSelectedVolunteers([]);
-      fetchSosReports();
+      fetchSosReports(true);
+      setIsModalOpen(false); // Close modal on success
     } catch (err) {
       setMessage('Failed to assign units.');
       setTimeout(() => setMessage(''), 3000);
@@ -356,56 +356,42 @@ const SosPage = () => {
     setAssigning(false);
   };
 
-  // Remove a rescuer from the assignment
+  // MODIFIED: Remove a rescuer from the assignment
   const handleRemoveRescuer = async (rescuerId) => {
     if (!selectedReport) return;
     try {
-      const updatedRescuers = (selectedReport.rescueUnits || []).filter(id => id !== rescuerId);
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
-        rescueUnits: updatedRescuers,
-        status: updatedRescuers.length > 0 ? 'responding' : 'pending',
+        rescueUnit: null,
+        status: 'pending',
       });
       setMessage('Rescuer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
-      fetchSosReports();
-      // Fetch updated report and update selectedReport
-      const updatedDoc = await getDocs(query(collection(db, 'sos_reports'), where('__name__', '==', selectedReport.id)));
-      if (!updatedDoc.empty) {
-        setSelectedReport({ id: selectedReport.id, ...updatedDoc.docs[0].data() });
-      } else {
-        setSelectedReport(null);
-      }
+      fetchSosReports(true);
+      setSelectedReport(prev => ({ ...prev, rescueUnit: null, status: 'pending' }));
     } catch (err) {
       setMessage('Failed to remove rescuer.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
 
-  // Remove a volunteer from the assignment
+  // MODIFIED: Remove a volunteer from the assignment
   const handleRemoveVolunteer = async (volunteerId) => {
     if (!selectedReport) return;
     try {
       const updatedVolunteers = (selectedReport.volunteerUnits || []).filter(id => id !== volunteerId);
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
         volunteerUnits: updatedVolunteers,
-        status: (selectedReport.rescueUnits?.length > 0 || updatedVolunteers.length > 0) ? 'responding' : 'pending',
       });
       setMessage('Volunteer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
-      fetchSosReports();
-      // Fetch updated report and update selectedReport
-      const updatedDoc = await getDocs(query(collection(db, 'sos_reports'), where('__name__', '==', selectedReport.id)));
-      if (!updatedDoc.empty) {
-        setSelectedReport({ id: selectedReport.id, ...updatedDoc.docs[0].data() });
-      } else {
-        setSelectedReport(null);
-      }
+      fetchSosReports(true);
+      setSelectedReport(prev => ({ ...prev, volunteerUnits: updatedVolunteers }));
     } catch (err) {
       setMessage('Failed to remove volunteer.');
       setTimeout(() => setMessage(''), 3000);
     }
   };
-
+  
   // Mark as safe
   const handleMarkSafe = async (reportId) => {
     try {
@@ -416,6 +402,7 @@ const SosPage = () => {
       setMessage('Marked as safe.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports();
+      setIsModalOpen(false); // Close modal on success
     } catch (err) {
       setMessage('Failed to mark as safe.');
       setTimeout(() => setMessage(''), 3000);
@@ -452,6 +439,7 @@ const SosPage = () => {
   
       setMessage('Location marked as a flooded area.');
       setTimeout(() => setMessage(''), 3000);
+      setIsModalOpen(false); // Close modal on success
   
     } catch (error) {
       console.error('Error marking as flooded:', error);
@@ -494,6 +482,20 @@ const SosPage = () => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+  };
+
+  // Function to open the modal
+  const openModal = (report) => {
+    setSelectedReport(report);
+    setIsModalOpen(true);
+  };
+
+  // Function to close the modal
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedReport(null);
+    setSelectedRescuer(null);
+    setSelectedVolunteers([]);
   };
 
   return (
@@ -545,169 +547,10 @@ const SosPage = () => {
                     key={report.id}
                     position={[report.location.latitude, report.location.longitude]}
                     eventHandlers={{
-                      click: () => setSelectedReport(report)
+                      click: () => openModal(report)
                     }}
                   />
                 ))}
-                {selectedReport && (
-                  // FIX 2: Added maxWidth to the Popup. This tells Leaflet to allow a wider container.
-                  <Popup
-                    position={[selectedReport.location.latitude, selectedReport.location.longitude]}
-                    onClose={() => setSelectedReport(null)}
-                    maxWidth={500}
-                    className="m-0"
-                  >
-                    <div className="flex flex-col bg-white rounded-lg shadow-xl overflow-hidden m-0" style={{  width: '500px', maxHeight: '500px' }}>
-                      {/* Header Section */}
-                      <div className="bg-red-600 text-white p-4 m-0">
-                        <div className="flex justify-between items-start">
-                          <h3 className="font-bold text-xl">SOS Emergency</h3>
-                          <button 
-                            onClick={() => setSelectedReport(null)}
-                            className="text-white hover:text-gray-200 text-lg"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <div className="flex items-center mt-2">
-                          <span className="bg-white text-red-600 py-1 px-3 rounded-full text-sm font-bold">
-                            {selectedReport.status || 'ACTIVE'}
-                          </span>
-                          <span className="ml-3 font-medium">
-                            {selectedReport.distance ? `${selectedReport.distance.toFixed(1)} km away` : 'Nearby'}
-                          </span>
-                        </div>
-                      </div>
-                      {/* Main Content - Scrollable */}
-                      <div className="p-4 overflow-y-auto flex-grow">
-                        {/* Critical Information Group */}
-                        <div className="grid grid-cols-2 gap-3 mb-4">
-                          <InfoCard label="Urgency Score" value={selectedReport.urgencyScore || 'N/A'} 
-                                    highlight={selectedReport.urgencyScore > 7} />
-                          <InfoCard label="Danger Level" value={getFormValue(selectedReport, 'dangerLevel')} />
-                          <InfoCard label="People" value={getFormValue(selectedReport, 'numberOfPeople')} />
-                          <InfoCard label="Can Evacuate" value={getFormValue(selectedReport, 'canEvacuate')} />
-                        </div>
-                        {/* Emergency Details */}
-                        <Section title="Emergency Details">
-                          <p className="text-gray-700">
-                            {getFormValue(selectedReport, 'notes') || 'No additional notes'}
-                          </p>
-                          {selectedReport.formAnswers?.natureOfEmergency && (
-                            <div className="mt-2">
-                              <span className="font-medium block mb-1">Emergency Type:</span>
-                              <div className="flex flex-wrap gap-1">
-                                {(Array.isArray(selectedReport.formAnswers.natureOfEmergency)
-                                  ? selectedReport.formAnswers.natureOfEmergency
-                                  : [selectedReport.formAnswers.natureOfEmergency]
-                                ).map((type, idx) => (
-                                  <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                                    {type}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </Section>
-                        {/* Assigned Personnel Section */}
-                        {selectedReport.rescueUnits?.length > 0 && (
-                          <PersonnelSection 
-                            title="Assigned Rescuers"
-                            personnel={selectedReport.rescueUnits}
-                            getDetails={getRescuerName}
-                            handleRemove={handleRemoveRescuer}
-                            color="green"
-                          />
-                        )}
-                        {selectedReport.volunteerUnits?.length > 0 && (
-                          <PersonnelSection
-                            title="Assigned Volunteers"
-                            personnel={selectedReport.volunteerUnits}
-                            getDetails={getVolunteerDetails}
-                            handleRemove={handleRemoveVolunteer}
-                            color="blue"
-                            showSkills
-                          />
-                        )}
-                        {/* Assignment Section */}
-                        <Section title="Assign Additional Units" className="mt-4">
-                          <div className="flex border-b mb-3">
-                            <TabButton active={activeTab === 'rescuers'} onClick={() => setActiveTab('rescuers')}>
-                              Rescuers ({rescuers.length})
-                            </TabButton>
-                            <TabButton active={activeTab === 'volunteers'} onClick={() => setActiveTab('volunteers')}>
-                              Volunteers ({volunteers.length})
-                            </TabButton>
-                          </div>
-                          <div className="max-h-40 overflow-y-auto pr-2">
-                            {activeTab === 'rescuers' && rescuers.map(rescuer => (
-                              <PersonnelItem
-                                key={rescuer.id}
-                                id={rescuer.id}
-                                name={`${rescuer.firstName} ${rescuer.lastName}`}
-                                isSelected={selectedRescuer === rescuer.id}
-                                isAssigned={selectedReport.rescueUnits?.includes(rescuer.id)}
-                                onSelect={handleRescuerSelection}
-                                selectionType="radio"
-                              />
-                            ))}
-                            {activeTab === 'volunteers' && volunteers.map(volunteer => {
-                              const user = users.find(u => u.id === volunteer.userId);
-                              return (
-                                <PersonnelItem
-                                  key={volunteer.id}
-                                  id={volunteer.id}
-                                  name={user ? `${user.firstName} ${user.lastName}` : 'Unknown Volunteer'}
-                                  status={volunteer.status}
-                                  skills={volunteer.choices}
-                                  isSelected={selectedVolunteers.includes(volunteer.id)}
-                                  isAssigned={selectedReport.volunteerUnits?.includes(volunteer.id)}
-                                  onSelect={handleVolunteerSelection}
-                                />
-                              );
-                            })}
-                          </div>
-                        </Section>
-                      </div>
-                      {/* Action Buttons */}
-                      <div className="p-3 bg-gray-50 border-t flex flex-col gap-2">
-                        <button
-                          className={`w-full py-2.5 text-white rounded font-medium transition-all ${
-                            assigning 
-                              ? 'bg-gray-400 cursor-not-allowed' 
-                              : 'bg-blue-600 hover:bg-blue-700'
-                          } ${
-                            (selectedRescuer || selectedVolunteers.length > 0) ? '' : 'opacity-50 cursor-not-allowed'
-                          }`}
-                          onClick={handleAssignUnits}
-                          disabled={assigning || (!selectedRescuer && selectedVolunteers.length === 0)}
-                        >
-                          {assigning ? (
-                            <span className="flex items-center justify-center">
-                              <Spinner /> Assigning...
-                            </span>
-                          ) : `Dispatch ${ (selectedRescuer ? 1 : 0) + selectedVolunteers.length} Unit(s)`}
-                        </button>
-                        {selectedReport.status !== 'resolved' && (
-                          <button
-                            className="w-full py-2.5 bg-orange-500 text-white rounded font-medium hover:bg-orange-600 transition-all"
-                            onClick={() => handleMarkAsFlooded(selectedReport)}
-                          >
-                            Mark Location as Flooded
-                          </button>
-                        )}
-                        {selectedReport.status === 'responding' && (
-                          <button
-                            className="w-full py-2.5 bg-green-600 text-white rounded font-medium hover:bg-green-700 transition-all"
-                            onClick={() => handleMarkSafe(selectedReport.id)}
-                          >
-                            Mark Situation as Safe
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </Popup>
-                )}
               </MapContainer>
             </div>
             <div>
@@ -768,9 +611,9 @@ const SosPage = () => {
                                   {getFormValue(report, 'numberOfPeople')} people, Danger Level: {getFormValue(report, 'dangerLevel')}
                                 </span>
                                 <span className="text-[#60758a] text-xs">Status: {report.status}</span>
-                                {report.rescueUnits && report.rescueUnits.length > 0 && (
+                                {report.rescueUnit && (
                                   <span className="text-[#60758a] text-xs">
-                                    {report.rescueUnits.length} rescuer(s) assigned
+                                    1 rescuer assigned
                                   </span>
                                 )}
                                 {filterType === 'urgency' && report.distance && (
@@ -801,6 +644,162 @@ const SosPage = () => {
             </div>
           </div>
         </div>
+        
+        {/* SOS Details Modal */}
+        {isModalOpen && selectedReport && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+              <div className="bg-white rounded-lg shadow-xl overflow-hidden m-4 w-full max-w-2xl max-h-[90vh] flex flex-col">
+                {/* Header Section */}
+                <div className="bg-red-600 text-white p-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-bold text-xl">SOS Emergency</h3>
+                    <button 
+                      onClick={closeModal}
+                      className="text-white hover:text-gray-200 text-2xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="flex items-center mt-2">
+                    <span className="bg-white text-red-600 py-1 px-3 rounded-full text-sm font-bold capitalize">
+                      {selectedReport.status || 'ACTIVE'}
+                    </span>
+                    <span className="ml-3 font-medium">
+                      {selectedReport.distance ? `${selectedReport.distance.toFixed(1)} km away` : 'Nearby'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Main Content - Scrollable */}
+                <div className="p-4 overflow-y-auto flex-grow">
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <InfoCard label="Urgency Score" value={selectedReport.urgencyScore || 'N/A'} 
+                              highlight={selectedReport.urgencyScore > 7} />
+                    <InfoCard label="Danger Level" value={getFormValue(selectedReport, 'dangerLevel')} />
+                    <InfoCard label="People" value={getFormValue(selectedReport, 'numberOfPeople')} />
+                    <InfoCard label="Can Evacuate" value={getFormValue(selectedReport, 'canEvacuate')} />
+                  </div>
+
+                  <Section title="Emergency Details">
+                    <p className="text-gray-700">
+                      {getFormValue(selectedReport, 'notes') || 'No additional notes'}
+                    </p>
+                    {selectedReport.formAnswers?.natureOfEmergency && (
+                      <div className="mt-2">
+                        <span className="font-medium block mb-1">Emergency Type:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {(Array.isArray(selectedReport.formAnswers.natureOfEmergency)
+                            ? selectedReport.formAnswers.natureOfEmergency
+                            : [selectedReport.formAnswers.natureOfEmergency]
+                          ).map((type, idx) => (
+                            <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Section>
+
+                  {selectedReport.rescueUnit && (
+                    <PersonnelSection 
+                      title="Assigned Rescuer"
+                      personnel={[selectedReport.rescueUnit]}
+                      getDetails={getRescuerName}
+                      handleRemove={handleRemoveRescuer}
+                      color="green"
+                    />
+                  )}
+                  {selectedReport.volunteerUnits?.length > 0 && (
+                    <PersonnelSection
+                      title="Assigned Volunteers"
+                      personnel={selectedReport.volunteerUnits}
+                      getDetails={getVolunteerDetails}
+                      handleRemove={handleRemoveVolunteer}
+                      color="blue"
+                      showSkills
+                    />
+                  )}
+
+                  <Section title="Assign Additional Units" className="mt-4">
+                    <div className="flex border-b mb-3">
+                      <TabButton active={activeTab === 'rescuers'} onClick={() => setActiveTab('rescuers')}>
+                        Rescuers ({rescuers.length})
+                      </TabButton>
+                      <TabButton active={activeTab === 'volunteers'} onClick={() => setActiveTab('volunteers')}>
+                        Volunteers ({volunteers.length})
+                      </TabButton>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto pr-2">
+                      {activeTab === 'rescuers' && rescuers.map(rescuer => (
+                        <PersonnelItem
+                          key={rescuer.id}
+                          id={rescuer.id}
+                          name={`${rescuer.firstName} ${rescuer.lastName}`}
+                          isSelected={selectedRescuer === rescuer.id}
+                          isAssigned={selectedReport.rescueUnit === rescuer.id}
+                          onSelect={handleRescuerSelection}
+                          selectionType="radio"
+                        />
+                      ))}
+                      {activeTab === 'volunteers' && volunteers.map(volunteer => {
+                        const user = users.find(u => u.id === volunteer.userId);
+                        return (
+                          <PersonnelItem
+                            key={volunteer.id}
+                            id={volunteer.id}
+                            name={user ? `${user.firstName} ${user.lastName}` : 'Unknown Volunteer'}
+                            status={volunteer.status}
+                            skills={volunteer.choices}
+                            isSelected={selectedVolunteers.includes(volunteer.id)}
+                            isAssigned={selectedReport.volunteerUnits?.includes(volunteer.id)}
+                            onSelect={handleVolunteerSelection}
+                          />
+                        );
+                      })}
+                    </div>
+                  </Section>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="p-3 bg-gray-50 border-t flex flex-col gap-2">
+                  <button
+                    className={`w-full py-2.5 text-white rounded font-medium transition-all ${
+                      assigning 
+                        ? 'bg-gray-400 cursor-not-allowed' 
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    } ${
+                      (selectedRescuer || selectedVolunteers.length > 0) ? '' : 'opacity-50 cursor-not-allowed'
+                    }`}
+                    onClick={handleAssignUnits}
+                    disabled={assigning || (!selectedRescuer && selectedVolunteers.length === 0)}
+                  >
+                    {assigning ? (
+                      <span className="flex items-center justify-center">
+                        <Spinner /> Assigning...
+                      </span>
+                    ) : `Dispatch ${ (selectedRescuer ? 1 : 0) + selectedVolunteers.length} Unit(s)`}
+                  </button>
+                  {selectedReport.status !== 'resolved' && (
+                    <button
+                      className="w-full py-2.5 bg-orange-500 text-white rounded font-medium hover:bg-orange-600 transition-all"
+                      onClick={() => handleMarkAsFlooded(selectedReport)}
+                    >
+                      Mark Location as Flooded
+                    </button>
+                  )}
+                  {selectedReport.status === 'responding' && (
+                    <button
+                      className="w-full py-2.5 bg-green-600 text-white rounded font-medium hover:bg-green-700 transition-all"
+                      onClick={() => handleMarkSafe(selectedReport.id)}
+                    >
+                      Mark Situation as Safe
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
         {/* Resolved SOS Modal */}
         {showResolvedModal && (
@@ -851,21 +850,17 @@ const SosPage = () => {
                               )}
                             </div>
                             
-                            {/* Show rescuers who responded */}
-                            {report.rescueUnits && report.rescueUnits.length > 0 && (
+                            {report.rescueUnit && (
                               <div className="mt-3">
-                                <p className="font-medium text-green-700 mb-1">Rescuers Responded:</p>
+                                <p className="font-medium text-green-700 mb-1">Rescuer Responded:</p>
                                 <div className="space-y-1">
-                                  {report.rescueUnits.map(rescuerId => (
-                                    <div key={rescuerId} className="bg-green-100 p-2 rounded text-sm">
-                                      {getRescuerName(rescuerId)}
-                                    </div>
-                                  ))}
+                                  <div key={report.rescueUnit} className="bg-green-100 p-2 rounded text-sm">
+                                    {getRescuerName(report.rescueUnit)}
+                                  </div>
                                 </div>
                               </div>
                             )}
                             
-                            {/* Show volunteers who responded */}
                             {report.volunteerUnits && report.volunteerUnits.length > 0 && (
                               <div className="mt-3">
                                 <p className="font-medium text-blue-700 mb-1">Volunteers Responded:</p>
@@ -893,7 +888,6 @@ const SosPage = () => {
                           </div>
                         </div>
                         
-                        {/* Action button to view on map */}
                         <div className="mt-3 pt-3 border-t border-gray-200">
                           <button
                             onClick={() => {
