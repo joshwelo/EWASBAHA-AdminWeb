@@ -16,7 +16,7 @@ const Sidebar = () => {
     { path: '/alerts', label: 'Alerts', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z' },
     { path: '/flood-affected-areas', label: 'Flood Affected Areas', icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z' },
     { path: '/evacuation-center', label: 'Evacuation Center', icon: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z' },
-    { path: '/sos', label: 'SOS', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z' },
+    { path: '/sos', label: 'SOS', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z' }
   ];
 
   const handleLogout = async () => {
@@ -72,15 +72,18 @@ const Sidebar = () => {
 
       {/* Bottom Section */}
       <div className="p-4 border-t border-[#f0f2f5]">
-        {/* Notification Button */}
-        <button className="flex items-center justify-center w-full h-10 gap-2 text-sm font-bold leading-normal tracking-[0.015em] bg-[#f0f2f5] text-[#111418] rounded-lg hover:bg-[#e8eaed] transition-colors">
-          <div className="text-[#111418]" data-icon="Bell" data-size="20px" data-weight="regular">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" fill="currentColor" viewBox="0 0 256 256">
-              <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z"></path>
-            </svg>
-          </div>
-          Notifications
-        </button>
+
+      <Link
+  to="/admin-history"
+  className="flex items-center justify-center w-full h-10 gap-2 text-sm font-bold leading-normal tracking-[0.015em] bg-[#f0f2f5] text-[#111418] rounded-lg hover:bg-[#e8eaed] transition-colors"
+>
+  <div className="text-[#111418]" data-icon="Bell" data-size="20px" data-weight="regular">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" fill="currentColor" viewBox="0 0 256 256">
+      <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z"></path>
+    </svg>
+  </div>
+  Admin History
+</Link>
 
         {/* User Profile */}
         <div className="flex items-center gap-3 mt-4 p-3 rounded-lg hover:bg-[#f0f2f5] transition-colors cursor-pointer">

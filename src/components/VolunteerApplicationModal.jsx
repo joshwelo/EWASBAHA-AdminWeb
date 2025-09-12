@@ -31,6 +31,7 @@ const VolunteerApplicationModal = ({ isOpen, onClose, application, loading, erro
       const userId = application.id;
       await updateDoc(doc(db, 'users', userId), { applicationStatus: 'approved' });
       await updateDoc(doc(db, 'volunteerApplications', userId), { applicationStatus: 'approved', notes: '' });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'users', userId, { applicationStatus: 'approved' }); await logAdminAction('UPDATE', 'volunteerApplications', userId, { applicationStatus: 'approved' }); } catch {}
       setActionSuccess('Application approved successfully.');
       if (refreshUsers) { clearCache('users_list'); refreshUsers(); }
     } catch (err) {
@@ -52,6 +53,7 @@ const VolunteerApplicationModal = ({ isOpen, onClose, application, loading, erro
       const userId = application.id;
       await updateDoc(doc(db, 'users', userId), { applicationStatus: 'rejected' });
       await updateDoc(doc(db, 'volunteerApplications', userId), { applicationStatus: 'rejected', notes: notes.trim() });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'users', userId, { applicationStatus: 'rejected' }); await logAdminAction('UPDATE', 'volunteerApplications', userId, { applicationStatus: 'rejected', notes: notes.trim() }); } catch {}
       setActionSuccess('Application rejected with notes.');
       if (refreshUsers) { clearCache('users_list'); refreshUsers(); }
     } catch (err) {

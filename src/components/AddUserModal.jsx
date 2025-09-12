@@ -131,6 +131,8 @@ const AddUserModal = ({ closeModal, refreshUsers }) => {
         createdAt: new Date().toISOString(),
       });
 
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('CREATE', 'users', user.uid, { email: formData.email }); } catch {}
+
       showToast('User created successfully!', 'success');
       
       setTimeout(() => {

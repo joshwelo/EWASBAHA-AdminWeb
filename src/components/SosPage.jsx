@@ -337,6 +337,7 @@ const SosPage = () => {
 
       if (Object.keys(updatePayload).length > 0) {
         await updateDoc(doc(db, 'sos_reports', selectedReport.id), updatePayload);
+        try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'sos_reports', selectedReport.id, { updatePayload }); } catch {}
       }
       
       const dispatchedRescuersCount = selectedRescuer ? 1 : 0;
@@ -364,6 +365,7 @@ const SosPage = () => {
         rescueUnit: null,
         status: 'pending',
       });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'sos_reports', selectedReport.id, { rescueUnit: null, status: 'pending' }); } catch {}
       setMessage('Rescuer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports(true);
@@ -382,6 +384,7 @@ const SosPage = () => {
       await updateDoc(doc(db, 'sos_reports', selectedReport.id), {
         volunteerUnits: updatedVolunteers,
       });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'sos_reports', selectedReport.id, { volunteerUnits: updatedVolunteers }); } catch {}
       setMessage('Volunteer removed from assignment.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports(true);
@@ -399,6 +402,7 @@ const SosPage = () => {
         status: 'resolved',
         resolvedAt: new Date().toISOString(),
       });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'sos_reports', reportId, { status: 'resolved' }); } catch {}
       setMessage('Marked as safe.');
       setTimeout(() => setMessage(''), 3000);
       fetchSosReports();
@@ -422,20 +426,20 @@ const SosPage = () => {
     }
   
     try {
-      await addDoc(collection(db, 'floodLocations'), {
-        routePoints: [
-          {
-            latitude: String(report.location.latitude),
-            longitude: String(report.location.longitude),
-            timestamp: String(Date.now()),
-          },
-        ],
-        timestamp: String(Date.now()),
-        isArchived: false,
-        source: 'sos_report',
-        sosReportId: report.id,
-        notes: `Flooded area from SOS. Danger: ${getFormValue(report, 'dangerLevel')}, People: ${getFormValue(report, 'numberOfPeople')}. Notes: ${getFormValue(report, 'notes')}`
-      });
+              await addDoc(collection(db, 'floodLocations'), {
+          routePoints: [
+            {
+              latitude: String(report.location.latitude),
+              longitude: String(report.location.longitude),
+              timestamp: String(Date.now()),
+            },
+          ],
+          timestamp: String(Date.now()),
+          isSafe: false,
+          source: 'sos_report',
+          sosReportId: report.id,
+          notes: `Flooded area from SOS. Danger: ${getFormValue(report, 'dangerLevel')}, People: ${getFormValue(report, 'numberOfPeople')}. Notes: ${getFormValue(report, 'notes')}`
+        });
   
       setMessage('Location marked as a flooded area.');
       setTimeout(() => setMessage(''), 3000);

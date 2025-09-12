@@ -112,6 +112,8 @@ const EditUserModal = ({ user, closeModal, refreshUsers }) => {
         updatedAt: new Date().toISOString(),
       });
 
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'users', user.id, { updates: formData }); } catch {}
+
       showToast('User updated successfully!', 'success');
       
       setTimeout(() => {

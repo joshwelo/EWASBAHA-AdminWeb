@@ -4,6 +4,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Users from './components/Users';
 import History from './components/History'; 
+import AdminHistory from './components/AdminHistory';
 import Alerts from './components/Alerts';
 import FloodAffectedAreas from './components/FloodAffectedAreas';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -18,6 +19,7 @@ function App() {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
         <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+        <Route path="/admin-history" element={<ProtectedRoute><AdminHistory /></ProtectedRoute>} />
         <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
         <Route path="/flood-affected-areas" element={<ProtectedRoute><FloodAffectedAreas /></ProtectedRoute>} />
         <Route path="/evacuation-center" element={<ProtectedRoute><EvacuationCenter /></ProtectedRoute>} />

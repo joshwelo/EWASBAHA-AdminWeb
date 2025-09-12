@@ -290,6 +290,13 @@ const EvacuationCenter = () => {
     setIsModalOpen(true);
   };
 
+  const handleAssignedVolunteersChange = async (center, updated) => {
+    try {
+      await updateDoc(doc(db, 'evacuationCenter', center.id), { assignedVolunteers: updated });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'evacuationCenter', center.id, { assignedVolunteers: updated }); } catch {}
+    } catch {}
+  };
+
   // Map click to set coordinates
   const onMapClick = useCallback((event) => {
     const { lat, lng } = event.latlng;
@@ -326,8 +333,10 @@ const EvacuationCenter = () => {
       };
       if (editingId) {
         await updateDoc(doc(db, 'evacuationCenter', editingId), data);
+        try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'evacuationCenter', editingId, { data }); } catch {}
       } else {
-        await addDoc(collection(db, 'evacuationCenter'), data);
+        const newDocRef = await addDoc(collection(db, 'evacuationCenter'), data);
+        try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('CREATE', 'evacuationCenter', newDocRef.id, { data }); } catch {}
       }
       clearCache('evacuation_centers');
       setForm(initialForm);
@@ -349,6 +358,7 @@ const EvacuationCenter = () => {
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'evacuationCenter', id));
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('DELETE', 'evacuationCenter', id); } catch {}
       clearCache('evacuation_centers');
       fetchCenters();
       if (editingId === id) {

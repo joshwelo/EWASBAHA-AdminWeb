@@ -1,5 +1,6 @@
 ﻿import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
+import { logAdminAction } from './adminHistory';
 
 const ALERTS_COLLECTION = 'alerts';
 
@@ -71,6 +72,7 @@ timestamp: generateHumanReadableTimestamp(),
 createdAt: serverTimestamp()
 };
 const newDoc = await addDoc(collectionRef, payload);
+await logAdminAction('CREATE', ALERTS_COLLECTION, newDoc.id, { title: alert.title });
 return { id: newDoc.id, ...payload };
 }
 
@@ -92,16 +94,20 @@ sentAt: convertFirestoreTimestamp(data.sentAt)
 export async function updateAlert(alertId, updates) {
 const docRef = doc(db, ALERTS_COLLECTION, alertId);
 await updateDoc(docRef, updates);
+await logAdminAction('UPDATE', ALERTS_COLLECTION, alertId, { updates });
 return { id: alertId, ...updates };
 }
 
 export async function deleteAlert(alertId) {
 const docRef = doc(db, ALERTS_COLLECTION, alertId);
 await deleteDoc(docRef);
+await logAdminAction('DELETE', ALERTS_COLLECTION, alertId);
 return true;
 }
 
 export async function sendAlert(alertId) {
 // Mark as sent and set sentAt timestamp
-return updateAlert(alertId, { sent: true, sentAt: serverTimestamp() });
+const result = await updateAlert(alertId, { sent: true, sentAt: serverTimestamp() });
+await logAdminAction('SEND', ALERTS_COLLECTION, alertId);
+return result;
 }

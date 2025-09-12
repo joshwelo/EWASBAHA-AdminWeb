@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Layout from './Layout';
+import { logAdminAction } from '../services/adminHistory';
 import AddUserModal from './AddUserModal';
 import EditUserModal from './EditUserModal';
 import VolunteerApplicationModal from './VolunteerApplicationModal';
@@ -113,6 +114,7 @@ const Users = () => {
     if (selectedUser) {
       try {
         await deleteDoc(doc(db, 'users', selectedUser.id));
+        await logAdminAction('DELETE', 'users', selectedUser.id, { email: selectedUser.email });
         clearCache('users_list');
         fetchUsers();
         setDeleteModalOpen(false);

@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Layout from './Layout';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 import { getCache, setCache, clearCache } from '../cache';
 import { Tooltip } from 'react-tooltip';
 
@@ -25,6 +25,8 @@ const center = [13.9725, 121.1668];
 
 const initialForm = {
   routePoints: [],
+  notes: '',
+  happenedAt: ''
 };
 
 const FloodAffectedAreas = () => {
@@ -39,10 +41,12 @@ const FloodAffectedAreas = () => {
   const [viewMode, setViewMode] = useState('active');
   const [historyData, setHistoryData] = useState({
     active: [],
-    archived: [],
+    safe: [],
     all: []
   });
+  const [activeTab, setActiveTab] = useState('map');
   const FIXED_CIRCLE_RADIUS_METERS = 100;
+  const [creationType, setCreationType] = useState('active'); // 'active' | 'pastSafe'
 
   // Custom hook to handle map events
   const MapClickHandler = ({ drawing, onMapClick }) => {
@@ -70,30 +74,25 @@ const FloodAffectedAreas = () => {
     let cacheKey = `flood_routes_${mode}`;
     let routesData = getCache(cacheKey);
     if (!routesData || forceRefresh) {
-      let querySnapshot;
+      const q = query(
+        collection(db, 'floodLocations'),
+        orderBy('timestamp', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const allRoutesRaw = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Backward compatibility mapping from archived -> safe
+      const allRoutes = allRoutesRaw.map(route => ({
+        ...route,
+        isSafe: route.isSafe ?? !!route.isArchived,
+        safeAt: route.safeAt ?? route.archivedAt,
+      }));
+
       if (mode === 'active') {
-        const q = query(
-          collection(db, 'floodLocations'),
-          orderBy('timestamp', 'desc')
-        );
-        querySnapshot = await getDocs(q);
-        const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        routesData = allRoutes.filter(route => !route.isArchived);
-      } else if (mode === 'archived') {
-        const q = query(
-          collection(db, 'floodLocations'),
-          where('isArchived', '==', true),
-          orderBy('timestamp', 'desc')
-        );
-        querySnapshot = await getDocs(q);
-        routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        routesData = allRoutes.filter(route => !route.isSafe);
+      } else if (mode === 'safe') {
+        routesData = allRoutes.filter(route => route.isSafe);
       } else {
-        const q = query(
-          collection(db, 'floodLocations'),
-          orderBy('timestamp', 'desc')
-        );
-        querySnapshot = await getDocs(q);
-        routesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        routesData = allRoutes;
       }
       setCache(cacheKey, routesData, 5 * 60 * 1000);
     }
@@ -111,12 +110,17 @@ const FloodAffectedAreas = () => {
         orderBy('timestamp', 'desc')
       );
       const querySnapshot = await getDocs(q);
-      const allRoutes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const activeRoutes = allRoutes.filter(route => !route.isArchived);
-      const archivedRoutes = allRoutes.filter(route => route.isArchived);
+      const allRoutesRaw = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allRoutes = allRoutesRaw.map(route => ({
+        ...route,
+        isSafe: route.isSafe ?? !!route.isArchived,
+        safeAt: route.safeAt ?? route.archivedAt,
+      }));
+      const activeRoutes = allRoutes.filter(route => !route.isSafe);
+      const safeRoutes = allRoutes.filter(route => route.isSafe);
       historyCache = {
         active: activeRoutes,
-        archived: archivedRoutes,
+        safe: safeRoutes,
         all: allRoutes
       };
       setCache('flood_history', historyCache, 5 * 60 * 1000);
@@ -153,30 +157,34 @@ const FloodAffectedAreas = () => {
     setModalOpen(true);
     setDrawing(true);
     setHighlightedRouteId(null);
+    setCreationType('active');
   };
 
   // Edit route handler
   const handleEditRoute = (route) => {
     setForm({
       routePoints: route.routePoints || [],
+      notes: route.notes || '',
+      happenedAt: ''
     });
     setSelectedRoute(route);
     setModalOpen(true);
     setDrawing(false);
     setHighlightedRouteId(route.id);
+    setCreationType((route.isSafe ?? route.isArchived) ? 'pastSafe' : 'active');
   };
 
   // Archive route
   const handleArchiveRoute = async (id) => {
-    if (!window.confirm('Archive this flood route? It will be moved to the archived routes.')) return;
+    if (!window.confirm('Mark this flood route as safe? It will be moved to the safe routes.')) return;
     setLoading(true);
     try {
       await updateDoc(doc(db, 'floodLocations', id), {
-        isArchived: true,
-        archivedAt: String(Date.now())
+        isSafe: true,
+        safeAt: String(Date.now())
       });
       clearCache('flood_routes_active');
-      clearCache('flood_routes_archived');
+      clearCache('flood_routes_safe');
       clearCache('flood_history');
       setModalOpen(false);
       setForm(initialForm);
@@ -185,27 +193,28 @@ const FloodAffectedAreas = () => {
       fetchRoutes();
       fetchHistoryData();
     } catch (error) {
-      alert('Error archiving flood route: ' + error.message);
+      alert('Error marking flood route as safe: ' + error.message);
     }
     setLoading(false);
   };
 
   // Restore route
   const handleRestoreRoute = async (id) => {
-    if (!window.confirm('Restore this flood route to active routes?')) return;
+    if (!window.confirm('Mark this flood route as unsafe (active)?')) return;
     setLoading(true);
     try {
       await updateDoc(doc(db, 'floodLocations', id), {
-        isArchived: false,
+        isSafe: false,
         restoredAt: String(Date.now())
       });
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('RESTORE', 'floodLocations', id); } catch {}
       clearCache('flood_routes_active');
-      clearCache('flood_routes_archived');
+      clearCache('flood_routes_safe');
       clearCache('flood_history');
       fetchRoutes();
       fetchHistoryData();
     } catch (error) {
-      alert('Error restoring flood route: ' + error.message);
+      alert('Error marking flood route as unsafe: ' + error.message);
     }
     setLoading(false);
   };
@@ -216,8 +225,9 @@ const FloodAffectedAreas = () => {
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'floodLocations', id));
+      try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('DELETE', 'floodLocations', id); } catch {}
       clearCache('flood_routes_active');
-      clearCache('flood_routes_archived');
+      clearCache('flood_routes_safe');
       clearCache('flood_history');
       setModalOpen(false);
       setForm(initialForm);
@@ -236,24 +246,53 @@ const FloodAffectedAreas = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const data = {
-        routePoints: form.routePoints,
-        timestamp: String(Date.now()),
-        isArchived: false
-      };
-      
+      const nowTs = String(Date.now());
+
       if (selectedRoute) {
-        await updateDoc(doc(db, 'floodLocations', selectedRoute.id), {
-          ...data,
-          updatedAt: String(Date.now())
-        });
+        const updateData = {
+          routePoints: form.routePoints,
+          notes: form.notes || '',
+          // preserve original created timestamp and safe state
+          timestamp: selectedRoute.timestamp,
+          isSafe: !!(selectedRoute.isSafe ?? selectedRoute.isArchived),
+          updatedAt: nowTs
+        };
+
+        await updateDoc(doc(db, 'floodLocations', selectedRoute.id), updateData);
+        try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('UPDATE', 'floodLocations', selectedRoute.id, { updateData }); } catch {}
         clearCache('flood_routes_active');
-        clearCache('flood_routes_archived');
+        clearCache('flood_routes_safe');
         clearCache('flood_history');
       } else {
-        await addDoc(collection(db, 'floodLocations'), data);
+        if (creationType === 'pastSafe') {
+          // Convert happenedAt (YYYY-MM-DD) to timestamp (ms)
+          const happenedDate = form.happenedAt
+            ? String(new Date(form.happenedAt + 'T00:00:00').getTime())
+            : nowTs;
+          const createData = {
+            routePoints: form.routePoints,
+            timestamp: happenedDate,
+            isSafe: true,
+            safeAt: happenedDate,
+            notes: form.notes || '',
+            source: 'manual_past'
+          };
+          const newDocRef = await addDoc(collection(db, 'floodLocations'), createData);
+          try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('CREATE', 'floodLocations', newDocRef.id, { createData }); } catch {}
+        } else {
+          const createData = {
+            routePoints: form.routePoints,
+            timestamp: nowTs,
+            isSafe: false,
+            notes: form.notes || '',
+            source: 'manual'
+          };
+
+          const newDocRef2 = await addDoc(collection(db, 'floodLocations'), createData);
+          try { const { logAdminAction } = await import('../services/adminHistory'); await logAdminAction('CREATE', 'floodLocations', newDocRef2.id, { createData }); } catch {}
+        }
         clearCache('flood_routes_active');
-        clearCache('flood_routes_archived');
+        clearCache('flood_routes_safe');
         clearCache('flood_history');
       }
 
@@ -261,6 +300,7 @@ const FloodAffectedAreas = () => {
       setForm(initialForm);
       setSelectedRoute(null);
       setHighlightedRouteId(null);
+      setCreationType('active');
       fetchRoutes();
       fetchHistoryData();
     } catch (err) {
@@ -322,8 +362,8 @@ const FloodAffectedAreas = () => {
   };
 
   const getStatusBadge = (route) => {
-    if (route.isArchived) {
-      return <span className="inline-block px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded-full">Archived</span>;
+    if (route.isSafe ?? route.isArchived) {
+      return <span className="inline-block px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded-full">Safe</span>;
     }
     return <span className="inline-block px-2 py-1 text-xs bg-green-200 text-green-700 rounded-full">Active</span>;
   };
@@ -369,18 +409,18 @@ const FloodAffectedAreas = () => {
 
   // Get route style properties
   const getRouteStyle = (route) => {
-    const isArchived = route.isArchived;
+    const isSafe = (route.isSafe ?? route.isArchived);
     const isSosSource = route.source === 'sos_report';
     const isHighlighted = route.id === highlightedRouteId;
     
     let fillColor = '#3182ce';
     let strokeColor = '#3182ce';
     
-    if (isArchived) {
+    if (isSafe) {
       fillColor = '#A0AEC0';
       strokeColor = '#A0AEC0';
     }
-    if (isSosSource && !isArchived) {
+    if (isSosSource && !isSafe) {
       fillColor = '#e53e3e';
       strokeColor = '#e53e3e';
     }
@@ -412,7 +452,7 @@ const FloodAffectedAreas = () => {
               <p className="text-[#111418] tracking-light text-[32px] font-bold leading-tight">Flood Affected Areas</p>
               <button
                 data-tooltip-id="flood-tooltip"
-                data-tooltip-content="View, add, and archive flood-affected routes. Click on the map to draw a new route. Use the sidebar to edit or archive routes. Toggle between active, archived, and all routes."
+                data-tooltip-content="View, add, and mark flood-affected routes as safe. Click on the map to draw a new route. Use the sidebar to edit or mark routes safe. Toggle between active, safe, and all routes."
                 className="ml-1 text-blue-500 hover:text-blue-700 focus:outline-none"
                 type="button"
                 aria-label="How to use Flood Affected Areas page"
@@ -446,14 +486,14 @@ const FloodAffectedAreas = () => {
               Active Routes
             </button>
             <button
-              onClick={() => setViewMode('archived')}
+              onClick={() => setViewMode('safe')}
               className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                viewMode === 'archived' 
+                viewMode === 'safe' 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Archived Routes
+              Safe Routes
             </button>
             <button
               onClick={() => setViewMode('all')}
@@ -469,12 +509,30 @@ const FloodAffectedAreas = () => {
         </div>
 
         <div className="px-6 pb-6 flex-1 flex flex-col">
-          <div className={`flex-1 grid grid-cols-1 gap-6 h-full transition-all duration-300 ${
-            modalOpen ? 'lg:grid-cols-[1fr_400px]' : 'lg:grid-cols-4'
-          }`}>
-            <div className={`h-full ${modalOpen ? '' : 'lg:col-span-3'}`}>
-              <div style={{ height: '500px', width: '100%' }}>
-                <MapContainer
+          <div className="mb-4 flex gap-2 border-b">
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'map' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'}`}
+              onClick={() => setActiveTab('map')}
+              type="button"
+            >
+              Map
+            </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'history' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'}`}
+              onClick={() => setActiveTab('history')}
+              type="button"
+            >
+              Flood Routes History
+            </button>
+          </div>
+
+          {activeTab === 'map' && (
+            <div className={`flex-1 grid grid-cols-1 gap-6 h-full transition-all duration-300 ${
+              modalOpen ? 'lg:grid-cols-[1fr_400px]' : 'lg:grid-cols-4'
+            }`}>
+              <div className={`h-full ${modalOpen ? '' : 'lg:col-span-3'}`}>
+                <div style={{ height: '500px', width: '100%' }}>
+                  <MapContainer
                   center={center}
                   zoom={12}
                   style={{ height: '100%', width: '100%' }}
@@ -564,7 +622,7 @@ const FloodAffectedAreas = () => {
               <div className="max-h-[500px]">
                 <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
                   <p className="text-[#111418] text-base font-medium leading-normal mb-4">
-                    {viewMode === 'active' ? 'Active' : viewMode === 'archived' ? 'Archived' : 'All'} Routes ({routes.length})
+                    {viewMode === 'active' ? 'Active' : viewMode === 'safe' ? 'Safe' : 'All'} Routes ({routes.length})
                   </p>
                   <div className="flex-1 overflow-y-auto">
                     {routes.length === 0 && (
@@ -596,14 +654,14 @@ const FloodAffectedAreas = () => {
                                 {new Date(parseInt(route.timestamp)).toLocaleDateString()}
                               </div>
                             )}
-                            {route.archivedAt && (
+                            {route.safeAt && (
                               <div className="text-xs text-gray-400">
-                                Archived: {new Date(parseInt(route.archivedAt)).toLocaleDateString()}
+                                Marked Safe: {new Date(parseInt(route.safeAt)).toLocaleDateString()}
                               </div>
                             )}
                           </div>
                           <div className="flex flex-col gap-1 flex-shrink-0">
-                            {!route.isArchived && (
+                            {!route.isSafe && (
                               <>
                                 <button
                                   className="text-blue-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-blue-50"
@@ -621,11 +679,11 @@ const FloodAffectedAreas = () => {
                                     handleArchiveRoute(route.id);
                                   }}
                                 >
-                                  Archive
+                                  Mark Safe
                                 </button>
                               </>
                             )}
-                            {route.isArchived && (
+                            {route.isSafe && (
                               <>
                                 <button
                                   className="text-green-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-green-50"
@@ -634,7 +692,7 @@ const FloodAffectedAreas = () => {
                                     handleRestoreRoute(route.id);
                                   }}
                                 >
-                                  Restore
+                                  Mark Unsafe
                                 </button>
                                 <button
                                   className="text-red-600 hover:underline text-xs px-1 py-0.5 rounded hover:bg-red-50"
@@ -655,17 +713,17 @@ const FloodAffectedAreas = () => {
                 </div>
               </div>
             )}
-
+            
             {/* Add/Edit Route Panel - replaces sidebar when modal is open */}
             {modalOpen && (
               <div className="h-full">
                 <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm h-full flex flex-col">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-semibold text-gray-800">
-                      {selectedRoute ? 'Edit Flood Route' : 'Add New Flood Route'}
+                      {selectedRoute ? 'Edit Flood Route' : (creationType === 'pastSafe' ? 'Add Past Flood (Safe)' : 'Add New Flood Route')}
                     </h2>
                     <button
-                      onClick={() => { setModalOpen(false); setForm(initialForm); setSelectedRoute(null); setDrawing(false); }}
+                      onClick={() => { setModalOpen(false); setForm(initialForm); setSelectedRoute(null); setDrawing(false); setCreationType('active'); }}
                       className="text-gray-400 hover:text-gray-600 text-xl font-bold"
                       aria-label="Close"
                     >
@@ -695,6 +753,37 @@ const FloodAffectedAreas = () => {
                         ))}
                       </div>
                     </div>
+
+                    {/* Additional Fields */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea
+                          className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          rows="3"
+                          placeholder="Add notes about this flood route"
+                          value={form.notes}
+                          onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(!selectedRoute && creationType === 'pastSafe') && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Happened Date</label>
+                            <input
+                              type="date"
+                              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={form.happenedAt}
+                              onChange={(e) => setForm((prev) => ({ ...prev, happenedAt: e.target.value }))}
+                              required
+                            />
+                          </div>
+                        )}
+
+
+                      </div>
+                    </div>
+
                     <div className="flex flex-col gap-2">
                       {!drawing && (
                         <button
@@ -717,9 +806,9 @@ const FloodAffectedAreas = () => {
                       <button
                         type="submit"
                         className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 text-sm"
-                        disabled={loading || form.routePoints.length < 2}
+                        disabled={loading || form.routePoints.length < 2 || (creationType === 'pastSafe' && !form.happenedAt)}
                       >
-                        {loading ? 'Saving...' : (selectedRoute ? 'Update Route' : 'Add Route')}
+                        {loading ? 'Saving...' : (selectedRoute ? 'Update Route' : (creationType === 'pastSafe' ? 'Add Past Flood' : 'Add Route'))}
                       </button>
                     </div>
                   </form>
@@ -727,152 +816,157 @@ const FloodAffectedAreas = () => {
               </div>
             )}
           </div>
-        </div>
+          )}
 
-        {/* History Section at the bottom */}
-        <div className="w-full bg-white border-t border-gray-200 shadow-inner mt-4 p-6">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Flood Routes History</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Active Routes */}
-            <div>
-              <h3 className="text-lg font-medium text-green-700 mb-3">
-                Active Routes ({historyData.active.length})
-              </h3>
-              <div className="space-y-2 max-h-[350px] overflow-y-auto">
-                {historyData.active.map(route => (
-                  <div key={route.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <div className="font-medium text-sm text-green-800">
-                      Route {route.id.substring(0, 8)}...
-                    </div>
-                    <div className="text-xs text-green-600 mt-1">
-                      Points: {route.routePoints?.length || 0}
-                    </div>
-                    <div className="text-xs text-green-500 mt-1">
-                      Created: {formatTimestamp(route.timestamp)}
-                    </div>
-                  </div>
-                ))}
-                {historyData.active.length === 0 && (
-                  <div className="text-gray-500 text-sm text-center py-4">No active routes</div>
-                )}
+          {activeTab === 'history' && (
+            <div className="w-full bg-white border-t border-gray-200 shadow-inner mt-4 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold text-gray-800">Flood Routes History</h2>
+                <button
+                  onClick={() => { setCreationType('pastSafe'); setForm({ ...initialForm, happenedAt: new Date().toISOString().slice(0,10) }); setSelectedRoute(null); setModalOpen(true); setDrawing(true); setActiveTab('map'); }}
+                  className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none font-medium text-sm"
+                  type="button"
+                >
+                  Add Past Flood
+                </button>
               </div>
-            </div>
-
-            {/* Archived Routes */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-700 mb-3">
-                Archived Routes ({historyData.archived.length})
-              </h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {historyData.archived.map(route => (
-                  <div key={route.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="font-medium text-sm text-gray-800">
-                      Route {route.id.substring(0, 8)}...
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      Points: {route.routePoints?.length || 0}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      Created: {formatTimestamp(route.timestamp)}
-                    </div>
-                    {route.archivedAt && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        Archived: {formatTimestamp(route.archivedAt)}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Active Routes */}
+                <div>
+                  <h3 className="text-lg font-medium text-green-700 mb-3">
+                    Active Routes ({historyData.active.length})
+                  </h3>
+                  <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                    {historyData.active.map(route => (
+                      <div key={route.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
+                        <div className="font-medium text-sm text-green-800">
+                          Route {route.id.substring(0, 8)}...
+                        </div>
+                        <div className="text-xs text-green-600 mt-1">
+                          Points: {route.routePoints?.length || 0}
+                        </div>
+                        <div className="text-xs text-green-500 mt-1">
+                          Created: {formatTimestamp(route.timestamp)}
+                        </div>
                       </div>
+                    ))}
+                    {historyData.active.length === 0 && (
+                      <div className="text-gray-500 text-sm text-center py-4">No active routes</div>
                     )}
                   </div>
-                ))}
-                {historyData.archived.length === 0 && (
-                  <div className="text-gray-500 text-sm text-center py-4">No archived routes</div>
-                )}
-              </div>
-            </div>
-
-            {/* Timeline View */}
-            <div>
-              <h3 className="text-lg font-medium text-blue-700 mb-3">
-                Timeline ({historyData.all.length})
-              </h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {historyData.all.map(route => (
-                  <div key={route.id} className={`p-3 rounded-lg border ${
-                    route.isArchived 
-                      ? 'bg-gray-50 border-gray-200' 
-                      : 'bg-blue-50 border-blue-200'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`font-medium text-sm ${
-                        route.isArchived ? 'text-gray-800' : 'text-blue-800'
-                      }`}>
-                        Route {route.id.substring(0, 8)}...
-                      </div>
-                      <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                        route.isArchived 
-                          ? 'bg-gray-200 text-gray-700' 
-                          : 'bg-green-200 text-green-700'
-                      }`}>
-                        {route.isArchived ? 'Archived' : 'Active'}
-                      </span>
-                    </div>
-                    <div className={`text-xs mt-1 ${
-                      route.isArchived ? 'text-gray-600' : 'text-blue-600'
-                    }`}>
-                      Points: {route.routePoints?.length || 0}
-                    </div>
-                    <div className={`text-xs mt-1 ${
-                      route.isArchived ? 'text-gray-500' : 'text-blue-500'
-                    }`}>
-                      Created: {formatTimestamp(route.timestamp)}
-                    </div>
-                    {route.archivedAt && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        Archived: {formatTimestamp(route.archivedAt)}
-                      </div>
-                    )}
-                    {route.updatedAt && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        Updated: {formatTimestamp(route.updatedAt)}
-                      </div>
-                    )}
-                    {route.restoredAt && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        Restored: {formatTimestamp(route.restoredAt)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {historyData.all.length === 0 && (
-                  <div className="text-gray-500 text-sm text-center py-4">No routes found</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Summary Statistics */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <h3 className="text-lg font-medium text-gray-800 mb-3">Summary Statistics</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{historyData.active.length}</div>
-                <div className="text-sm text-green-700">Active Routes</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-gray-600">{historyData.archived.length}</div>
-                <div className="text-sm text-gray-700">Archived Routes</div>
-              </div>
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">{historyData.all.length}</div>
-                <div className="text-sm text-blue-700">Total Routes</div>
-              </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <div className="text-2xl font-bold text-purple-600">
-                  {historyData.all.reduce((sum, route) => sum + (route.routePoints?.length || 0), 0)}
                 </div>
-                <div className="text-sm text-purple-700">Total Points</div>
+
+                {/* Safe Routes */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-700 mb-3">
+                    Marked as Safe Routes ({historyData.safe.length})
+                  </h3>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {historyData.safe.map(route => (
+                      <div key={route.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="font-medium text-sm text-gray-800">
+                          Route {route.id.substring(0, 8)}...
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">
+                          Points: {route.routePoints?.length || 0}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Created: {formatTimestamp(route.timestamp)}
+                        </div>
+                        {route.safeAt && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Marked Safe: {formatTimestamp(route.safeAt)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {historyData.safe.length === 0 && (
+                      <div className="text-gray-500 text-sm text-center py-4">No safe routes</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Timeline View */}
+                <div>
+                  <h3 className="text-lg font-medium text-blue-700 mb-3">
+                    Timeline ({historyData.all.length})
+                  </h3>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {historyData.all.map(route => (
+                      <div key={route.id} className={`p-3 rounded-lg border ${
+                        (route.isSafe ?? route.isArchived) 
+                          ? 'bg-gray-50 border-gray-200' 
+                          : 'bg-blue-50 border-blue-200'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`font-medium text-sm ${
+                            (route.isSafe ?? route.isArchived) ? 'text-gray-800' : 'text-blue-800'
+                          }`}>
+                            Route {route.id.substring(0, 8)}...
+                          </div>
+                          <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                            (route.isSafe ?? route.isArchived) 
+                              ? 'bg-gray-200 text-gray-700' 
+                              : 'bg-green-200 text-green-700'
+                          }`}>
+                            {(route.isSafe ?? route.isArchived) ? 'Safe' : 'Active'}
+                          </span>
+                        </div>
+                        <div className={`text-xs mt-1 ${
+                          (route.isSafe ?? route.isArchived) ? 'text-gray-600' : 'text-blue-600'
+                        }`}>
+                          Points: {route.routePoints?.length || 0}
+                        </div>
+                        <div className={`text-xs mt-1 ${
+                          (route.isSafe ?? route.isArchived) ? 'text-gray-500' : 'text-blue-500'
+                        }`}>
+                          Created: {formatTimestamp(route.timestamp)}
+                        </div>
+                        {route.safeAt && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Marked Safe: {formatTimestamp(route.safeAt)}
+                          </div>
+                        )}
+                        {route.updatedAt && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Updated: {formatTimestamp(route.updatedAt)}
+                          </div>
+                        )}
+                        {route.restoredAt && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Restored: {formatTimestamp(route.restoredAt)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {historyData.all.length === 0 && (
+                      <div className="text-gray-500 text-sm text-center py-4">No routes found</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Statistics */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-medium text-gray-800 mb-3">Summary Statistics</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">{historyData.active.length}</div>
+                    <div className="text-sm text-green-700">Active Routes</div>
+                  </div>
+                  <div className="text-center p-3 bg-gray-50 rounded-lg">
+                    <div className="text-2xl font-bold text-gray-600">{historyData.safe.length}</div>
+                    <div className="text-sm text-gray-700">Safe Routes</div>
+                  </div>
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">{historyData.all.length}</div>
+                    <div className="text-sm text-blue-700">Total Routes</div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+      </div>
       </div>
       {/* Place Tooltip at the end of the component */}
       <Tooltip id="flood-tooltip" place="right" />
