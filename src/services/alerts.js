@@ -68,7 +68,7 @@ const collectionRef = collection(db, ALERTS_COLLECTION);
 const payload = {
 ...alert,
 sent: !!alert.sent,
-timestamp: generateHumanReadableTimestamp(),
+timestamp: serverTimestamp(),
 createdAt: serverTimestamp()
 };
 const newDoc = await addDoc(collectionRef, payload);

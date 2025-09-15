@@ -17,7 +17,7 @@ const Alerts = () => {
     type: 'FLOOD_ALERT',
     severity: 'WARNING',
     targetArea: '',
-    timestamp: '',
+    timestamp: new Date(),
     sent: false
   });
 
@@ -170,7 +170,7 @@ const Alerts = () => {
       type: 'FLOOD_ALERT',
       severity: 'WARNING',
       targetArea: '',
-      timestamp: '',
+      timestamp: new Date(),
       sent: false
     });
     setShowCreateModal(true);
@@ -315,7 +315,7 @@ const Alerts = () => {
                   <div className="min-w-0">
                     <div className="font-medium truncate">{alert.title}</div>
                     <div className="text-xs text-gray-500 mt-1">{alert.type} • {alert.severity} • {alert.targetArea}</div>
-                    <div className="text-xs text-gray-400 mt-1">{safeTimestampToString(alert.timestamp || alert.createdAt)}</div>
+                    <div className="text-xs text-gray-400 mt-1">{safeTimestampToString(alert.timestamp)}</div>
                     {alert.body && <div className="text-sm text-gray-700 mt-2">{alert.body}</div>}
                     {alert.sent && <div className="text-xs mt-2 text-green-700">Sent</div>}
                   </div>
