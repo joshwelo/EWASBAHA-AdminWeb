@@ -13,7 +13,7 @@ export const WEATHER_CONFIG = {
   LONGITUDE: 121.168155,
   
   // City display name (for UI purposes) , 
-  CITY_NAME: "Lipa City, Batangas",
+  CITY_NAME: "Santo Tomas, Batangas",
   
   // Units: "metric" for Celsius, "imperial" for Fahrenheit
   UNITS: "metric",

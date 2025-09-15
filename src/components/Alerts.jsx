@@ -286,13 +286,6 @@ const Alerts = () => {
                   </div>
                 )}
               </div>
-              <button 
-                onClick={fetchWeather}
-                disabled={loading}
-                className="bg-white/20 hover:bg-white/30 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors"
-              >
-                {loading ? 'Refreshing...' : 'Refresh'}
-              </button>
             </div>
           </div>
         </div>
