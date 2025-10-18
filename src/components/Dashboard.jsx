@@ -16,7 +16,11 @@ const Dashboard = () => {
     totalEvacuationCenters: 0,
     totalCapacity: 0,
     currentOccupancy: 0,
-    systemUptime: 99.9
+    systemUptime: 99.9,
+    totalEmergencyReports: 0,
+    pendingEmergencyReports: 0,
+    verifiedEmergencyReports: 0,
+    criticalReports: 0
   });
 
   useEffect(() => {
@@ -29,7 +33,8 @@ const Dashboard = () => {
       // Try cache first unless forceRefresh
       let usersData = getCache('dashboard_users');
       let evacCentersData = getCache('dashboard_evacCenters');
-      if (!usersData || !evacCentersData || forceRefresh) {
+      let emergencyReportsData = getCache('dashboard_emergencyReports');
+      if (!usersData || !evacCentersData || !emergencyReportsData || forceRefresh) {
         // Fetch users
         const usersSnapshot = await getDocs(collection(db, 'users'));
         usersData = usersSnapshot.docs.map(doc => ({
@@ -45,6 +50,14 @@ const Dashboard = () => {
           ...doc.data()
         }));
         setCache('dashboard_evacCenters', evacCentersData, 5 * 60 * 1000); // 5 min TTL
+
+        // Fetch emergency reports
+        const emergencyReportsSnapshot = await getDocs(collection(db, 'emergency_reports'));
+        emergencyReportsData = emergencyReportsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setCache('dashboard_emergencyReports', emergencyReportsData, 5 * 60 * 1000); // 5 min TTL
       }
       setUsers(usersData);
       setEvacuationCenters(evacCentersData);
@@ -66,6 +79,18 @@ const Dashboard = () => {
         sum + (center.currentOccupancy || 0), 0
       );
 
+      // Calculate emergency report metrics
+      const totalEmergencyReports = emergencyReportsData.length;
+      const pendingEmergencyReports = emergencyReportsData.filter(report => 
+        report.status === 'pending'
+      ).length;
+      const verifiedEmergencyReports = emergencyReportsData.filter(report => 
+        report.status === 'verified'
+      ).length;
+      const criticalReports = emergencyReportsData.filter(report => 
+        report.severity === 'critical'
+      ).length;
+
       setMetrics({
         totalUsers,
         activeVolunteers,
@@ -74,7 +99,11 @@ const Dashboard = () => {
         totalEvacuationCenters,
         totalCapacity,
         currentOccupancy,
-        systemUptime: 99.9
+        systemUptime: 99.9,
+        totalEmergencyReports,
+        pendingEmergencyReports,
+        verifiedEmergencyReports,
+        criticalReports
       });
 
     } catch (error) {
@@ -142,7 +171,7 @@ const Dashboard = () => {
       
       {/* Stats Cards */}
       <div className="px-6 pb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 w-full">
           <div className="flex flex-col gap-2 rounded-lg p-6 bg-[#f0f2f5] hover:bg-[#e8eaed] transition-colors">
             <p className="text-[#111418] text-base font-medium leading-normal">Total Users</p>
             <p className="text-[#111418] tracking-light text-2xl font-bold leading-tight">{metrics.totalUsers}</p>
@@ -162,6 +191,21 @@ const Dashboard = () => {
             <p className="text-[#111418] text-base font-medium leading-normal">Evacuation Centers</p>
             <p className="text-[#111418] tracking-light text-2xl font-bold leading-tight">{metrics.totalEvacuationCenters}</p>
             <p className="text-[#60758a] text-sm">Available centers</p>
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg p-6 bg-[#f0f2f5] hover:bg-[#e8eaed] transition-colors">
+            <p className="text-[#111418] text-base font-medium leading-normal">Emergency Reports</p>
+            <p className="text-[#111418] tracking-light text-2xl font-bold leading-tight">{metrics.totalEmergencyReports}</p>
+            <p className="text-[#60758a] text-sm">Total reports</p>
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg p-6 bg-[#f0f2f5] hover:bg-[#e8eaed] transition-colors">
+            <p className="text-[#111418] text-base font-medium leading-normal">Pending Verification</p>
+            <p className="text-[#111418] tracking-light text-2xl font-bold leading-tight">{metrics.pendingEmergencyReports}</p>
+            <p className="text-[#60758a] text-sm">Awaiting review</p>
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg p-6 bg-[#f0f2f5] hover:bg-[#e8eaed] transition-colors">
+            <p className="text-[#111418] text-base font-medium leading-normal">Critical Reports</p>
+            <p className="text-[#111418] tracking-light text-2xl font-bold leading-tight text-red-600">{metrics.criticalReports}</p>
+            <p className="text-[#60758a] text-sm">High priority</p>
           </div>
         </div>
       </div>

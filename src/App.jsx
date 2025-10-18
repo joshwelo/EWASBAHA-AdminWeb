@@ -10,6 +10,7 @@ import FloodAffectedAreas from './components/FloodAffectedAreas';
 import ProtectedRoute from './components/ProtectedRoute';
 import EvacuationCenter from './components/EvacuationCenter';
 import SosPage from './components/SosPage';
+import EmergencyReports from './components/EmergencyReports';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/flood-affected-areas" element={<ProtectedRoute><FloodAffectedAreas /></ProtectedRoute>} />
         <Route path="/evacuation-center" element={<ProtectedRoute><EvacuationCenter /></ProtectedRoute>} />
         <Route path="/sos" element={<ProtectedRoute><SosPage /></ProtectedRoute>} />
+        <Route path="/emergency-reports" element={<ProtectedRoute><EmergencyReports /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

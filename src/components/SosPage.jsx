@@ -6,6 +6,7 @@ import { collection, getDocs, updateDoc, doc, query, where, arrayUnion, addDoc }
 import { db } from '../firebase';
 import Layout from './Layout';
 import { getCache, setCache, clearCache } from '../cache';
+import { groupReportsByLocation } from '../services/reportAggregation';
 import { Tooltip } from 'react-tooltip';
 
 // Fix for Leaflet marker icons
@@ -138,6 +139,7 @@ const SosPage = () => {
   const [rescuers, setRescuers] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [users, setUsers] = useState([]); // Add users state to get volunteer names
+  const [emergencyReports, setEmergencyReports] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [selectedRescuer, setSelectedRescuer] = useState(null);
@@ -274,11 +276,23 @@ const SosPage = () => {
     setUsers(usersList);
   };
 
+  // Fetch emergency reports
+  const fetchEmergencyReports = async (forceRefresh = false) => {
+    let reportsList = getCache('sos_emergency_reports');
+    if (!reportsList || forceRefresh) {
+      const snapshot = await getDocs(collection(db, 'emergency_reports'));
+      reportsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCache('sos_emergency_reports', reportsList, 5 * 60 * 1000);
+    }
+    setEmergencyReports(reportsList);
+  };
+
   useEffect(() => {
     fetchSosReports();
     fetchRescuers();
     fetchVolunteers();
     fetchUsers();
+    fetchEmergencyReports();
     getUserLocation();
   }, []);
 
@@ -585,6 +599,37 @@ const SosPage = () => {
                       />
                       <span className="text-sm">Nearest Location</span>
                     </label>
+                  </div>
+                </div>
+
+                {/* Emergency Reports Summary */}
+                <div className="p-4 bg-white rounded-lg border border-[#dbe0e6] shadow-sm mb-4">
+                  <p className="text-[#111418] text-base font-medium leading-normal mb-2">
+                    Emergency Reports Summary
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Total Reports:</span>
+                      <span className="font-medium">{emergencyReports.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Pending:</span>
+                      <span className="font-medium text-yellow-600">
+                        {emergencyReports.filter(r => r.status === 'pending').length}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Verified:</span>
+                      <span className="font-medium text-green-600">
+                        {emergencyReports.filter(r => r.status === 'verified').length}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Critical:</span>
+                      <span className="font-medium text-red-600">
+                        {emergencyReports.filter(r => r.severity === 'critical').length}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
