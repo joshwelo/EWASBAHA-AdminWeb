@@ -223,43 +223,7 @@ const EmergencyReports = () => {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="px-6 pb-6">
-          <div className="flex flex-wrap gap-4 mb-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-gray-700">Filter by Status</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="verified">Verified</option>
-                <option value="invalid">Invalid</option>
-                <option value="resolved">Resolved</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-gray-700">Filter by Type</label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Types</option>
-                <option value="Rising Floodwater">Rising Floodwater</option>
-                <option value="Landslide">Landslide</option>
-                <option value="Fallen Tree">Fallen Tree</option>
-                <option value="Road Blocked">Road Blocked</option>
-                <option value="Power Outage">Power Outage</option>
-                <option value="Needs Rescue">Needs Rescue</option>
-                <option value="Needs Food/Water">Needs Food/Water</option>
-                <option value="Needs Medical">Needs Medical</option>
-              </select>
-            </div>
-          </div>
-        </div>
+
 
         {/* Location Groups */}
         <div className="px-6 pb-6">
@@ -338,7 +302,43 @@ const EmergencyReports = () => {
             ))}
           </div>
         </div>
-
+        {/* Filters */}
+        <div className="px-6 pb-6">
+          <div className="flex flex-wrap gap-4 mb-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-gray-700">Filter by Status</label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="verified">Verified</option>
+                <option value="invalid">Invalid</option>
+                <option value="resolved">Resolved</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-gray-700">Filter by Type</label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Types</option>
+                <option value="Rising Floodwater">Rising Floodwater</option>
+                <option value="Landslide">Landslide</option>
+                <option value="Fallen Tree">Fallen Tree</option>
+                <option value="Road Blocked">Road Blocked</option>
+                <option value="Power Outage">Power Outage</option>
+                <option value="Needs Rescue">Needs Rescue</option>
+                <option value="Needs Food/Water">Needs Food/Water</option>
+                <option value="Needs Medical">Needs Medical</option>
+              </select>
+            </div>
+          </div>
+        </div>
         {/* Reports List */}
         <div className="px-6 pb-6">
           <h2 className="text-[#111418] text-[22px] font-bold leading-tight tracking-[-0.015em] pb-4">All Reports ({filteredReports.length})</h2>
@@ -487,6 +487,96 @@ const formatDate = (timestamp) => {
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 };
 
+// Media Evidence Component with Error Handling
+const MediaEvidence = ({ mediaUrl, mediaType }) => {
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Check if it's a video by mediaType or file extension
+  const isVideo = mediaType === 'video' || mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i);
+
+  // Copy URL to clipboard
+  const copyToClipboard = (url) => {
+    navigator.clipboard.writeText(url);
+    const originalMessage = errorMessage;
+    setErrorMessage('✓ URL copied to clipboard!');
+    setTimeout(() => setErrorMessage(originalMessage || 'This may be due to CORS policy or file access restrictions.'), 2000);
+  };
+
+  // Open URL in new tab
+  const openInNewTab = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  if (hasError) {
+    return (
+      <div className="w-full h-64 border border-gray-300 rounded bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-4 max-w-md">
+          <div className="text-gray-400 text-4xl mb-2">⚠️</div>
+          <p className="text-sm text-gray-600 font-medium">Media Failed to Load</p>
+          <p className="text-xs text-gray-500 mt-1 mb-3">
+            {errorMessage || 'This may be due to CORS policy or file access restrictions.'}
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => {
+                setHasError(false);
+                setErrorMessage('');
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => openInNewTab(mediaUrl)}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+            >
+              Open in New Tab
+            </button>
+            <button
+              onClick={() => copyToClipboard(mediaUrl)}
+              className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+            >
+              Copy URL
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-3 break-all">{mediaUrl}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-64 border border-gray-300 rounded overflow-hidden relative">
+      {isVideo ? (
+        <video 
+          src={mediaUrl} 
+          controls 
+          className="w-full h-full object-contain bg-black"
+          preload="metadata"
+          onError={(e) => {
+            console.error('Video load error:', mediaUrl);
+            setHasError(true);
+            setErrorMessage('Unable to load video from Firebase Storage.');
+          }}
+        />
+      ) : (
+        <img 
+          src={mediaUrl} 
+          alt="Evidence" 
+          className="w-full h-full object-cover" 
+          loading="lazy"
+          onError={(e) => {
+            console.error('Image load error:', mediaUrl);
+            setHasError(true);
+            setErrorMessage('Unable to load image from Firebase Storage.');
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
 // Report Verification Modal Component
 const ReportVerificationModal = ({ report, onClose, onVerify }) => {
   const [adminNotes, setAdminNotes] = useState('');
@@ -544,9 +634,7 @@ const ReportVerificationModal = ({ report, onClose, onVerify }) => {
             {report.mediaUrl && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Media Evidence</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <img src={report.mediaUrl} alt="Evidence" className="w-full h-32 object-cover rounded" />
-                </div>
+                <MediaEvidence mediaUrl={report.mediaUrl} mediaType={report.mediaType} />
               </div>
             )}
 
