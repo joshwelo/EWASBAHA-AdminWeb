@@ -64,7 +64,7 @@ const UserGuide = () => {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [description, setDescription] = useState('');
-  const [steps, setSteps] = useState(['']); // Changed from process to steps
+  const [steps, setSteps] = useState(['']);
   const [image, setImage] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -383,28 +383,45 @@ const UserGuide = () => {
         )}
 
         {isPreviewModalOpen && (
-             <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-                <div className="relative mx-auto w-80 h-[580px] bg-white rounded-[2.5rem] border-8 border-gray-800 shadow-2xl">
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-4 bg-gray-800 rounded-b-lg"></div>
-                    <div className="w-full h-full rounded-[2rem] overflow-hidden flex flex-col">
-                         <header className="p-3 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
-                            <h3 className="text-base font-bold truncate pr-4">{previewGuide?.title}</h3>
-                            <button onClick={() => setPreviewModalOpen(false)} className="text-gray-500 hover:text-gray-800 shrink-0"><XIcon/></button>
-                        </header>
-                        <main className="p-4 overflow-y-auto flex-grow bg-white">
-                            {previewGuide?.image && <img src={previewGuide.image} alt={previewGuide.title} className="w-full h-32 object-cover rounded-lg mb-4" />}
-                             <p className="text-sm text-gray-500 mb-3">{previewGuide?.subtitle}</p>
-                             <p className="text-sm text-gray-700 mb-4">{previewGuide?.description}</p>
-                             <h4 className="font-bold text-sm mb-2">Steps:</h4>
-                             {previewGuide?.process && Array.isArray(previewGuide.process) && previewGuide.process.length > 0 && (
-                                 <ol className="list-decimal list-inside prose prose-sm max-w-none space-y-2">
-                                     {previewGuide.process.map((step, index) => (
-                                         <li key={index}>{step}</li>
-                                     ))}
-                                 </ol>
-                             )}
-                        </main>
-                    </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/60" onClick={() => setPreviewModalOpen(false)} />
+                <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                    <header className="p-5 border-b flex justify-between items-center">
+                        <h3 className="text-xl font-semibold text-gray-900 truncate pr-4">{previewGuide?.title}</h3>
+                        <button onClick={() => setPreviewModalOpen(false)} className="text-gray-500 hover:text-gray-800">
+                            <XIcon />
+                        </button>
+                    </header>
+                    <main className="p-6 overflow-y-auto flex-grow">
+                        {previewGuide?.image && 
+                            <img 
+                                src={previewGuide.image} 
+                                alt={previewGuide.title} 
+                                className="w-full h-56 object-cover rounded-lg mb-6 shadow-md border" 
+                            />
+                        }
+                        <h4 className="text-lg font-semibold text-gray-800 mb-2">{previewGuide?.subtitle}</h4>
+                        <p className="text-base text-gray-700 mb-6">{previewGuide?.description}</p>
+                        
+                        <h5 className="font-bold text-lg text-gray-800 mb-3 border-t pt-4">Steps:</h5>
+                        {previewGuide?.process && Array.isArray(previewGuide.process) && previewGuide.process.length > 0 ? (
+                            <ol className="list-decimal list-inside space-y-3 text-gray-700">
+                                {previewGuide.process.map((step, index) => (
+                                    <li key={index} className="pl-2 text-base">{step}</li>
+                                ))}
+                            </ol>
+                        ) : (
+                            <p className="text-gray-500 italic">No steps provided.</p>
+                        )}
+                    </main>
+                    <footer className="p-4 bg-gray-50 border-t flex justify-end">
+                         <button 
+                            onClick={() => setPreviewModalOpen(false)} 
+                            className="px-4 py-2 text-sm rounded-md border bg-white text-gray-700 hover:bg-gray-100"
+                        >
+                            Close
+                        </button>
+                    </footer>
                 </div>
             </div>
         )}
