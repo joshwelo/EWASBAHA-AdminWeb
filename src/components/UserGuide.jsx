@@ -19,20 +19,20 @@ const PlusIcon = () => (
 );
 
 const EditIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
         <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
         <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
     </svg>
 );
 
 const DeleteIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
         <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
     </svg>
 );
 
 const PreviewIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
         <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
         <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
     </svg>
@@ -48,12 +48,12 @@ const UserGuide = () => {
   const [guides, setGuides] = useState([]);
   const [categories, setCategories] = useState([]);
   
-  // State for Modals
+  // Modals
   const [isGuideModalOpen, setGuideModalOpen] = useState(false);
   const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
   const [isPreviewModalOpen, setPreviewModalOpen] = useState(false);
 
-  // State for Forms
+  // Forms
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [currentGuideId, setCurrentGuideId] = useState(null);
@@ -64,7 +64,7 @@ const UserGuide = () => {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [description, setDescription] = useState('');
-  const [process, setProcess] = useState('');
+  const [steps, setSteps] = useState(['']); // Changed from process to steps
   const [image, setImage] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -93,7 +93,7 @@ const UserGuide = () => {
     setTitle('');
     setSubtitle('');
     setDescription('');
-    setProcess('');
+    setSteps(['']);
     setImage('');
     setImageFile(null);
     setCategory('');
@@ -108,7 +108,7 @@ const UserGuide = () => {
       setTitle(guide.title);
       setSubtitle(guide.subtitle);
       setDescription(guide.description);
-      setProcess(guide.process);
+      setSteps(guide.process && Array.isArray(guide.process) ? guide.process : ['']);
       setImage(guide.image);
       setCategory(guide.category);
     } else {
@@ -128,6 +128,23 @@ const UserGuide = () => {
       }
   }
 
+  const handleStepChange = (index, event) => {
+    const newSteps = [...steps];
+    newSteps[index] = event.target.value;
+    setSteps(newSteps);
+  };
+
+  const addStep = () => {
+    setSteps([...steps, '']);
+  };
+
+  const removeStep = (index) => {
+    if (steps.length > 1) {
+        const newSteps = steps.filter((_, i) => i !== index);
+        setSteps(newSteps);
+    }
+  };
+
   const handleGuideSubmit = async (e) => {
     e.preventDefault();
     setIsUploading(true);
@@ -139,7 +156,7 @@ const UserGuide = () => {
         imageUrl = await getDownloadURL(imageRef);
     }
 
-    const guideData = { title, subtitle, description, process, image: imageUrl, category };
+    const guideData = { title, subtitle, description, process: steps.filter(s => s.trim() !== ''), image: imageUrl, category };
     
     if (isEditing) {
       const guideDoc = doc(db, 'userGuides', currentGuideId);
@@ -216,37 +233,36 @@ const UserGuide = () => {
   }, {});
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Layout>
+      <div className="w-full h-full p-6">
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
             <div>
                 <h1 className="text-3xl font-bold text-gray-900">User Guide</h1>
                 <p className="mt-1 text-sm text-gray-600">Manage and organize guides for your mobile app users.</p>
             </div>
           <div className="flex space-x-2 mt-4 sm:mt-0">
-            <button onClick={() => openGuideModal()} className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <button onClick={() => openGuideModal()} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700">
               <PlusIcon />
               New Guide
             </button>
-            <button onClick={() => openCategoryModal()} className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            <button onClick={() => openCategoryModal()} className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50">
               Manage Categories
             </button>
           </div>
         </header>
 
-        {/* Categories List */}
         {isCategoryModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center">
                 <div className="absolute inset-0 bg-black/50" onClick={closeCategoryModal} />
                 <div className="relative bg-white rounded-lg shadow-lg w-full max-w-md mx-4">
-                    <div className="p-5 border-b border-gray-200 flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-900">Manage Categories</h3>
+                    <div className="p-5 border-b flex justify-between items-center">
+                        <h3 className="text-lg font-semibold">Manage Categories</h3>
                         <button onClick={closeCategoryModal}><XIcon/></button>
                     </div>
                     <div className="p-6">
                         <form onSubmit={handleCategorySubmit} className="flex items-center mb-4">
                             <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder={isEditingCategory ? "Update category name" : "Create a new category"} className="w-full border rounded-md px-3 py-2 text-sm" required />
-                            <button type="submit" className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#111418]">{isEditingCategory ? 'Update' : 'Add'}</button>
+                            <button type="submit" className="ml-3 shrink-0 px-4 py-2 text-sm rounded-md text-white bg-[#111418]">{isEditingCategory ? 'Update' : 'Add'}</button>
                         </form>
                         <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                             {categories.map(cat => (
@@ -264,20 +280,19 @@ const UserGuide = () => {
              </div>
         )}
 
-        {/* Guides List */}
         <main>
           {Object.keys(guidesByCategory).sort().map(categoryName => (
             <div key={categoryName} className="mb-10">
               <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">{categoryName}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {guidesByCategory[categoryName].map(guide => (
-                  <div key={guide.id} className="bg-white rounded-lg shadow-md overflow-hidden transform hover:-translate-y-1 transition-transform duration-300">
+                  <div key={guide.id} className="bg-white rounded-lg shadow-md overflow-hidden flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300">
                     <div className="p-5">
                         {guide.image && <img src={guide.image} alt={guide.title} className="w-full h-40 object-cover rounded-md mb-4"/>}
                       <h3 className="text-lg font-bold text-gray-900 truncate">{guide.title}</h3>
                       <p className="text-sm text-gray-600 mt-1 h-10 overflow-hidden">{guide.subtitle}</p>
                     </div>
-                    <div className="px-5 pb-5 flex justify-end space-x-2 bg-gray-50 border-t">
+                    <div className="px-5 pb-4 flex justify-end space-x-2 bg-gray-50 border-t pt-4">
                         <button onClick={() => openPreviewModal(guide)} className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                             <PreviewIcon/> Preview
                         </button>
@@ -295,42 +310,70 @@ const UserGuide = () => {
           ))}
         </main>
 
-        {/* Guide Form Modal */}
         {isGuideModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center">
                  <div className="absolute inset-0 bg-black/50" onClick={closeGuideModal} />
                 <div className="relative bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
-                    <form onSubmit={handleGuideSubmit} className="p-6 space-y-4 flex-grow overflow-y-auto">
-                        <div className="text-lg font-semibold">{isEditing ? 'Edit Guide' : 'Create New Guide'}</div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Title</label>
-                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required />
+                    <form onSubmit={handleGuideSubmit} className="flex flex-col flex-grow">
+                         <div className="p-6 border-b">
+                            <h3 className="text-lg font-semibold">{isEditing ? 'Edit Guide' : 'Create New Guide'}</h3>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Subtitle</label>
-                            <input type="text" value={subtitle} onChange={e => setSubtitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+                        <div className="p-6 space-y-4 overflow-y-auto">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Title</label>
+                                <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Subtitle</label>
+                                <input type="text" value={subtitle} onChange={e => setSubtitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Description</label>
+                                <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" rows="3"></textarea>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-2">Process (Steps)</label>
+                                {steps.map((step, index) => (
+                                    <div key={index} className="flex items-center gap-2 mb-2">
+                                        <input
+                                            type="text"
+                                            value={step}
+                                            onChange={(e) => handleStepChange(index, e)}
+                                            className="w-full border rounded-md px-3 py-2 text-sm"
+                                            placeholder={`Step ${index + 1}`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeStep(index)}
+                                            disabled={steps.length <= 1}
+                                            className="shrink-0 px-3 py-2 text-sm rounded-md text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-300"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={addStep}
+                                    className="mt-2 w-full px-4 py-2 text-sm rounded-md border border-dashed border-gray-400 text-gray-600 hover:bg-gray-100"
+                                >
+                                    Add Step
+                                </button>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Image</label>
+                                <input type="file" onChange={handleImageChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                {image && !imageFile && <img src={image} alt="Current" className="mt-2 h-20 rounded-md"/>}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Category</label>
+                                <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required>
+                                    <option value="">Select a category</option>
+                                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Description</label>
-                            <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" rows="4"></textarea>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Process (Steps)</label>
-                            <textarea value={process} onChange={e => setProcess(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" rows="6" placeholder="1. First step...\n2. Second step..."></textarea>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Image</label>
-                            <input type="file" onChange={handleImageChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
-                            {image && !imageFile && <img src={image} alt="Current" className="mt-2 h-20 rounded-md"/>}
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Category</label>
-                            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required>
-                                <option value="">Select a category</option>
-                                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                            </select>
-                        </div>
-                         <div className="flex items-center justify-end gap-2 pt-2">
+                         <div className="flex items-center justify-end gap-2 p-4 bg-gray-50 border-t">
                             <button type="button" onClick={closeGuideModal} className="px-4 py-2 text-sm rounded-md border">Cancel</button>
                             <button type="submit" disabled={isUploading} className="px-4 py-2 text-sm rounded-md text-white bg-[#111418]">{isUploading ? 'Uploading...' : (isEditing ? 'Update Guide' : 'Create Guide')}</button>
                         </div>
@@ -339,34 +382,35 @@ const UserGuide = () => {
             </div>
         )}
 
-        {/* Preview Modal */}
         {isPreviewModalOpen && (
              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
                 <div className="relative mx-auto w-80 h-[580px] bg-white rounded-[2.5rem] border-8 border-gray-800 shadow-2xl">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-4 bg-gray-800 rounded-b-lg"></div>
-                    <div className="absolute -left-1 w-1 h-20 bg-gray-800 top-20 rounded-l-lg"></div>
-                    <div className="absolute -right-1 w-1 h-20 bg-gray-800 top-20 rounded-r-lg"></div>
-                    <div className="w-full h-full rounded-[2rem] overflow-hidden">
-                        <div className="flex flex-col h-full">
-                             <header className="p-3 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
-                                <h3 className="text-base font-bold truncate">{previewGuide?.title}</h3>
-                                <button onClick={() => setPreviewModalOpen(false)} className="text-gray-500 hover:text-gray-800"><XIcon/></button>
-                            </header>
-                            <main className="p-4 overflow-y-auto flex-grow bg-white">
-                                {previewGuide?.image && <img src={previewGuide.image} alt={previewGuide.title} className="w-full h-32 object-cover rounded-lg mb-4" />}
-                                 <p className="text-sm text-gray-500 mb-3">{previewGuide?.subtitle}</p>
-                                 <p className="text-sm text-gray-700 mb-4">{previewGuide?.description}</p>
-                                 <h4 className="font-bold text-sm mb-2">Steps:</h4>
-                                 <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: previewGuide?.process.replace(/\n/g, '<br />') }} />
-                            </main>
-                        </div>
+                    <div className="w-full h-full rounded-[2rem] overflow-hidden flex flex-col">
+                         <header className="p-3 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
+                            <h3 className="text-base font-bold truncate pr-4">{previewGuide?.title}</h3>
+                            <button onClick={() => setPreviewModalOpen(false)} className="text-gray-500 hover:text-gray-800 shrink-0"><XIcon/></button>
+                        </header>
+                        <main className="p-4 overflow-y-auto flex-grow bg-white">
+                            {previewGuide?.image && <img src={previewGuide.image} alt={previewGuide.title} className="w-full h-32 object-cover rounded-lg mb-4" />}
+                             <p className="text-sm text-gray-500 mb-3">{previewGuide?.subtitle}</p>
+                             <p className="text-sm text-gray-700 mb-4">{previewGuide?.description}</p>
+                             <h4 className="font-bold text-sm mb-2">Steps:</h4>
+                             {previewGuide?.process && Array.isArray(previewGuide.process) && previewGuide.process.length > 0 && (
+                                 <ol className="list-decimal list-inside prose prose-sm max-w-none space-y-2">
+                                     {previewGuide.process.map((step, index) => (
+                                         <li key={index}>{step}</li>
+                                     ))}
+                                 </ol>
+                             )}
+                        </main>
                     </div>
                 </div>
             </div>
         )}
 
       </div>
-    </div>
+    </Layout>
   );
 };
 
