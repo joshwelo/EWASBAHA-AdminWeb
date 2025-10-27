@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { Link } from 'react-router-dom';
+import { db, storage } from '../firebase';
 import {
   collection,
   addDoc,
@@ -8,23 +9,67 @@ import {
   setDoc,
   deleteDoc,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// --- SVG Icons ---
+const PlusIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+  </svg>
+);
+
+const EditIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+        <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+    </svg>
+);
+
+const DeleteIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
+    </svg>
+);
+
+const PreviewIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+        <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+    </svg>
+);
+
+const XIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
 
 const UserGuide = () => {
   const [guides, setGuides] = useState([]);
   const [categories, setCategories] = useState([]);
+  
+  // State for Modals
+  const [isGuideModalOpen, setGuideModalOpen] = useState(false);
+  const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [isPreviewModalOpen, setPreviewModalOpen] = useState(false);
+
+  // State for Forms
   const [isEditing, setIsEditing] = useState(false);
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [currentGuideId, setCurrentGuideId] = useState(null);
+  const [currentCategoryId, setCurrentCategoryId] = useState(null);
+  const [previewGuide, setPreviewGuide] = useState(null);
+  
+  // Form Fields
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [description, setDescription] = useState('');
   const [process, setProcess] = useState('');
   const [image, setImage] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [category, setCategory] = useState('');
   const [newCategory, setNewCategory] = useState('');
-  const [isEditingCategory, setIsEditingCategory] = useState(false);
-  const [currentCategoryId, setCurrentCategoryId] = useState(null);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [previewGuide, setPreviewGuide] = useState(null);
 
   const guidesCollectionRef = collection(db, 'userGuides');
   const categoriesCollectionRef = collection(db, 'categories');
@@ -44,96 +89,121 @@ const UserGuide = () => {
     getCategories();
   }, []);
 
-  const handleCreateGuide = async () => {
-    await addDoc(guidesCollectionRef, {
-      title,
-      subtitle,
-      description,
-      process,
-      image,
-      category,
-    });
-    getGuides();
-    clearForm();
-  };
-
-  const handleUpdateGuide = async () => {
-    const guideDoc = doc(db, 'userGuides', currentGuideId);
-    await setDoc(guideDoc, {
-      title,
-      subtitle,
-      description,
-      process,
-      image,
-      category,
-    });
-    getGuides();
-    clearForm();
-    setIsEditing(false);
-    setCurrentGuideId(null);
-  };
-
-  const handleDeleteGuide = async (id) => {
-    const guideDoc = doc(db, 'userGuides', id);
-    await deleteDoc(guideDoc);
-    getGuides();
-  };
-
-  const handleEditClick = (guide) => {
-    setIsEditing(true);
-    setCurrentGuideId(guide.id);
-    setTitle(guide.title);
-    setSubtitle(guide.subtitle);
-    setDescription(guide.description);
-    setProcess(guide.process);
-    setImage(guide.image);
-    setCategory(guide.category);
-  };
-
-  const handleCreateCategory = async () => {
-    await addDoc(categoriesCollectionRef, { name: newCategory });
-    getCategories();
-    setNewCategory('');
-  };
-
-  const handleUpdateCategory = async () => {
-    const categoryDoc = doc(db, 'categories', currentCategoryId);
-    await setDoc(categoryDoc, { name: newCategory });
-    getCategories();
-    setNewCategory('');
-    setIsEditingCategory(false);
-    setCurrentCategoryId(null);
-  };
-
-  const handleDeleteCategory = async (id) => {
-    const categoryDoc = doc(db, 'categories', id);
-    await deleteDoc(categoryDoc);
-    getCategories();
-  };
-
-  const handleEditCategoryClick = (category) => {
-    setIsEditingCategory(true);
-    setCurrentCategoryId(category.id);
-    setNewCategory(category.name);
-  };
-
-  const openPreview = (guide) => {
-    setPreviewGuide(guide);
-    setIsPreviewOpen(true);
-  };
-
-  const closePreview = () => {
-    setIsPreviewOpen(false);
-    setPreviewGuide(null);
-  };
-
   const clearForm = () => {
     setTitle('');
     setSubtitle('');
     setDescription('');
     setProcess('');
     setImage('');
+    setImageFile(null);
     setCategory('');
+    setCurrentGuideId(null);
+    setIsEditing(false);
+  };
+
+  const openGuideModal = (guide = null) => {
+    if (guide) {
+      setIsEditing(true);
+      setCurrentGuideId(guide.id);
+      setTitle(guide.title);
+      setSubtitle(guide.subtitle);
+      setDescription(guide.description);
+      setProcess(guide.process);
+      setImage(guide.image);
+      setCategory(guide.category);
+    } else {
+      clearForm();
+    }
+    setGuideModalOpen(true);
+  };
+
+  const closeGuideModal = () => {
+    clearForm();
+    setGuideModalOpen(false);
+  };
+
+  const handleImageChange = (e) => {
+      if (e.target.files[0]) {
+          setImageFile(e.target.files[0]);
+      }
+  }
+
+  const handleGuideSubmit = async (e) => {
+    e.preventDefault();
+    setIsUploading(true);
+
+    let imageUrl = image;
+    if (imageFile) {
+        const imageRef = ref(storage, `user-guides/${Date.now()}_${imageFile.name}`);
+        await uploadBytes(imageRef, imageFile);
+        imageUrl = await getDownloadURL(imageRef);
+    }
+
+    const guideData = { title, subtitle, description, process, image: imageUrl, category };
+    
+    if (isEditing) {
+      const guideDoc = doc(db, 'userGuides', currentGuideId);
+      await setDoc(guideDoc, guideData);
+    } else {
+      await addDoc(guidesCollectionRef, guideData);
+    }
+
+    getGuides();
+    setIsUploading(false);
+    closeGuideModal();
+  };
+
+  const handleDeleteGuide = async (id) => {
+    if (window.confirm("Are you sure you want to delete this guide?")) {
+        const guideDoc = doc(db, 'userGuides', id);
+        await deleteDoc(guideDoc);
+        getGuides();
+    }
+  };
+
+  const openCategoryModal = (cat = null) => {
+      if (cat) {
+          setIsEditingCategory(true);
+          setCurrentCategoryId(cat.id);
+          setNewCategory(cat.name);
+      } else {
+          setIsEditingCategory(false);
+          setCurrentCategoryId(null);
+          setNewCategory('');
+      }
+      setCategoryModalOpen(true);
+  }
+
+  const closeCategoryModal = () => {
+      setNewCategory('');
+      setIsEditingCategory(false);
+      setCurrentCategoryId(null);
+      setCategoryModalOpen(false);
+  }
+
+  const handleCategorySubmit = async (e) => {
+      e.preventDefault();
+      if(isEditingCategory) {
+        const categoryDoc = doc(db, 'categories', currentCategoryId);
+        await setDoc(categoryDoc, { name: newCategory });
+      } else {
+        await addDoc(categoriesCollectionRef, { name: newCategory });
+      }
+      getCategories();
+      closeCategoryModal();
+  }
+
+  const handleDeleteCategory = async (id) => {
+    if (window.confirm("Are you sure you want to delete this category?")) {
+        const categoryDoc = doc(db, 'categories', id);
+        await deleteDoc(categoryDoc);
+        getCategories();
+    }
+  }
+
+  const openPreviewModal = (guide) => {
+    setPreviewGuide(guide);
+    setPreviewModalOpen(true);
   };
 
   const guidesByCategory = guides.reduce((acc, guide) => {
@@ -146,253 +216,162 @@ const UserGuide = () => {
   }, {});
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">User Guide Management</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">
-              {isEditing ? 'Edit User Guide' : 'Create User Guide'}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter title"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
-                <input
-                  type="text"
-                  value={subtitle}
-                  onChange={(e) => setSubtitle(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter subtitle"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows="3"
-                  placeholder="Enter description"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Process (Steps)</label>
-                <textarea
-                  value={process}
-                  onChange={(e) => setProcess(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows="5"
-                  placeholder="Enter process steps, use numbering for each step"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image (Optional)</label>
-                <input
-                  type="text"
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter image URL"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+    <div className="bg-gray-50 min-h-screen">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
+            <div>
+                <h1 className="text-3xl font-bold text-gray-900">User Guide</h1>
+                <p className="mt-1 text-sm text-gray-600">Manage and organize guides for your mobile app users.</p>
             </div>
-            <div className="mt-4">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={handleUpdateGuide}
-                    className="bg-blue-500 text-white px-4 py-2 rounded-lg mr-2 hover:bg-blue-600"
-                  >
-                    Update Guide
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditing(false);
-                      clearForm();
-                    }}
-                    className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={handleCreateGuide}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-                >
-                  Create Guide
+            <div className="flex items-center space-x-2 mt-4 sm:mt-0">
+                <Link to="/" className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Back to Dashboard
+                </Link>
+                <button onClick={() => openGuideModal()} className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <PlusIcon />
+                New Guide
                 </button>
-              )}
+                <button onClick={() => openCategoryModal()} className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Manage Categories
+                </button>
             </div>
-          </div>
+        </header>
 
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Existing User Guides</h2>
-            {Object.keys(guidesByCategory).map((categoryName) => (
-              <div key={categoryName} className="mb-8">
-                <h3 className="text-xl font-bold mb-2">{categoryName}</h3>
-                <div className="space-y-4">
-                  {guidesByCategory[categoryName].map((guide) => (
-                    <div key={guide.id} className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-xl font-bold">{guide.title}</h3>
-                      <p className="text-md text-gray-600">{guide.subtitle}</p>
-                      <div className="mt-4">
-                        <button
-                          onClick={() => openPreview(guide)}
-                          className="bg-green-500 text-white px-3 py-1 rounded-lg mr-2 hover:bg-green-600 text-sm"
-                        >
-                          Preview
-                        </button>
-                        <button
-                          onClick={() => handleEditClick(guide)}
-                          className="bg-yellow-500 text-white px-3 py-1 rounded-lg mr-2 hover:bg-yellow-600 text-sm"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteGuide(guide.id)}
-                          className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 text-sm"
-                        >
-                          Delete
-                        </button>
-                      </div>
+        {/* Categories List */}
+        {isCategoryModalOpen && (
+             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                    <div className="p-5 border-b border-gray-200 flex justify-between items-center">
+                        <h3 className="text-lg font-medium text-gray-900">Manage Categories</h3>
+                        <button onClick={closeCategoryModal}><XIcon/></button>
                     </div>
-                  ))}
+                    <div className="p-5">
+                        <form onSubmit={handleCategorySubmit} className="flex items-center mb-4">
+                            <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder={isEditingCategory ? "Update category name" : "Create a new category"} className="w-full border-gray-300 rounded-md shadow-sm text-sm" required />
+                            <button type="submit" className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">{isEditingCategory ? 'Update' : 'Add'}</button>
+                        </form>
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            {categories.map(cat => (
+                                <div key={cat.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-md">
+                                    <p className="text-sm font-medium text-gray-800">{cat.name}</p>
+                                    <div className="flex items-center space-x-3">
+                                        <button onClick={() => openCategoryModal(cat)} className="text-sm text-blue-600 hover:text-blue-800">Edit</button>
+                                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-sm text-red-600 hover:red-800">Delete</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
+             </div>
+        )}
 
-        <div>
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">
-              {isEditingCategory ? 'Edit Category' : 'Create Category'}
-            </h2>
-            <div className="flex items-center">
-              <input
-                type="text"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter category name"
-              />
-              {isEditingCategory ? (
-                <>
-                  <button
-                    onClick={handleUpdateCategory}
-                    className="bg-blue-500 text-white px-4 py-2 rounded-lg ml-2 hover:bg-blue-600"
-                  >
-                    Update
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditingCategory(false);
-                      setNewCategory('');
-                      setCurrentCategoryId(null);
-                    }}
-                    className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg ml-2 hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={handleCreateCategory}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg ml-2 hover:bg-blue-600"
-                >
-                  Create
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Existing Categories</h2>
-            <div className="space-y-2">
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className="flex items-center justify-between border border-gray-200 rounded-lg p-2"
-                >
-                  <p>{cat.name}</p>
-                  <div>
-                    <button
-                      onClick={() => handleEditCategoryClick(cat)}
-                      className="bg-yellow-500 text-white px-2 py-1 rounded-lg mr-2 hover:bg-yellow-600 text-sm"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCategory(cat.id)}
-                      className="bg-red-500 text-white px-2 py-1 rounded-lg hover:bg-red-600 text-sm"
-                    >
-                      Delete
-                    </button>
+        {/* Guides List */}
+        <main>
+          {Object.keys(guidesByCategory).sort().map(categoryName => (
+            <div key={categoryName} className="mb-10">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">{categoryName}</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {guidesByCategory[categoryName].map(guide => (
+                  <div key={guide.id} className="bg-white rounded-lg shadow-md overflow-hidden transform hover:-translate-y-1 transition-transform duration-300">
+                    <div className="p-5">
+                        {guide.image && <img src={guide.image} alt={guide.title} className="w-full h-40 object-cover rounded-md mb-4"/>}
+                      <h3 className="text-lg font-bold text-gray-900 truncate">{guide.title}</h3>
+                      <p className="text-sm text-gray-600 mt-1 h-10 overflow-hidden">{guide.subtitle}</p>
+                    </div>
+                    <div className="px-5 pb-5 flex justify-end space-x-2 bg-gray-50 border-t">
+                        <button onClick={() => openPreviewModal(guide)} className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <PreviewIcon/> Preview
+                        </button>
+                        <button onClick={() => openGuideModal(guide)} className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-yellow-500 hover:bg-yellow-600">
+                            <EditIcon/> Edit
+                        </button>
+                         <button onClick={() => handleDeleteGuide(guide.id)} className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                            <DeleteIcon/> Delete
+                        </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
+          ))}
+        </main>
+
+        {/* Guide Form Modal */}
+        {isGuideModalOpen && (
+            <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-40">
+                <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                    <div className="p-5 border-b flex justify-between items-center">
+                        <h3 className="text-xl font-semibold">{isEditing ? 'Edit Guide' : 'Create New Guide'}</h3>
+                        <button onClick={closeGuideModal} className="text-gray-500 hover:text-gray-800"><XIcon/></button>
+                    </div>
+                    <form onSubmit={handleGuideSubmit} className="flex-grow overflow-y-auto p-6">
+                        <div className="grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-8">
+                           <div className="sm:col-span-2">
+                                <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
+                                <input type="text" name="title" id="title" value={title} onChange={e => setTitle(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm sm:text-sm" required />
+                            </div>
+                             <div className="sm:col-span-2">
+                                <label htmlFor="subtitle" className="block text-sm font-medium text-gray-700">Subtitle</label>
+                                <input type="text" name="subtitle" id="subtitle" value={subtitle} onChange={e => setSubtitle(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm sm:text-sm" />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea name="description" id="description" rows="4" value={description} onChange={e => setDescription(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm sm:text-sm"></textarea>
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label htmlFor="process" className="block text-sm font-medium text-gray-700">Process (Steps)</label>
+                                <textarea name="process" id="process" rows="6" value={process} onChange={e => setProcess(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm sm:text-sm" placeholder="1. First step...\n2. Second step..."></textarea>
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label htmlFor="image" className="block text-sm font-medium text-gray-700">Image</label>
+                                <input type="file" name="image" id="image" onChange={handleImageChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                {image && !imageFile && <img src={image} alt="Current" className="mt-2 h-20 rounded-md"/>}
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
+                                <select id="category" name="category" value={category} onChange={e => setCategory(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm sm:text-sm" required>
+                                    <option value="">Select a category</option>
+                                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                         <div className="pt-6 mt-6 border-t border-gray-200 flex justify-end">
+                            <button type="button" onClick={closeGuideModal} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                            <button type="submit" disabled={isUploading} className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"> {isUploading ? 'Uploading...' : (isEditing ? 'Update Guide' : 'Create Guide')}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
+
+        {/* Preview Modal */}
+        {isPreviewModalOpen && (
+             <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+                <div className="relative mx-auto w-80 h-[580px] bg-white rounded-[2.5rem] border-8 border-gray-800 shadow-2xl">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-4 bg-gray-800 rounded-b-lg"></div>
+                    <div className="absolute -left-1 w-1 h-20 bg-gray-800 top-20 rounded-l-lg"></div>
+                    <div className="absolute -right-1 w-1 h-20 bg-gray-800 top-20 rounded-r-lg"></div>
+                    <div className="w-full h-full rounded-[2rem] overflow-hidden">
+                        <div className="flex flex-col h-full">
+                             <header className="p-3 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
+                                <h3 className="text-base font-bold truncate">{previewGuide?.title}</h3>
+                                <button onClick={() => setPreviewModalOpen(false)} className="text-gray-500 hover:text-gray-800"><XIcon/></button>
+                            </header>
+                            <main className="p-4 overflow-y-auto flex-grow bg-white">
+                                {previewGuide?.image && <img src={previewGuide.image} alt={previewGuide.title} className="w-full h-32 object-cover rounded-lg mb-4" />}
+                                 <p className="text-sm text-gray-500 mb-3">{previewGuide?.subtitle}</p>
+                                 <p className="text-sm text-gray-700 mb-4">{previewGuide?.description}</p>
+                                 <h4 className="font-bold text-sm mb-2">Steps:</h4>
+                                 <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: previewGuide?.process.replace(/\n/g, '<br />') }} />
+                            </main>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
       </div>
-
-      {isPreviewOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-sm mx-auto">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-bold">Phone Preview</h3>
-              <button onClick={closePreview} className="text-gray-500 hover:text-gray-700">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4 h-96 overflow-y-auto">
-              <div className="border-2 border-gray-800 rounded-[2.5rem] h-full p-4 bg-white">
-                <div className="flex flex-col h-full">
-                  <div className="mb-4">
-                    <h1 className="text-2xl font-bold">{previewGuide?.title}</h1>
-                    <p className="text-md text-gray-600">{previewGuide?.subtitle}</p>
-                  </div>
-                  {previewGuide?.image && <img src={previewGuide.image} alt={previewGuide.title} className="mb-4 rounded-lg" />}
-                  <div className="prose max-w-none flex-1 overflow-y-auto">
-                    <p>{previewGuide?.description}</p>
-                    <h4 className="font-bold mt-4">Process:</h4>
-                    <div dangerouslySetInnerHTML={{ __html: previewGuide?.process.replace(/\n/g, '<br />') }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
