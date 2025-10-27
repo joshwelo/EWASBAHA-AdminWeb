@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from '../firebase';
+import Layout from './Layout';
 import {
   collection,
   addDoc,
@@ -223,11 +224,11 @@ const UserGuide = () => {
                 <p className="mt-1 text-sm text-gray-600">Manage and organize guides for your mobile app users.</p>
             </div>
           <div className="flex space-x-2 mt-4 sm:mt-0">
-            <button onClick={() => openGuideModal()} className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <button onClick={() => openGuideModal()} className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
               <PlusIcon />
               New Guide
             </button>
-            <button onClick={() => openCategoryModal()} className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            <button onClick={() => openCategoryModal()} className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
               Manage Categories
             </button>
           </div>
@@ -235,24 +236,25 @@ const UserGuide = () => {
 
         {/* Categories List */}
         {isCategoryModalOpen && (
-             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/50" onClick={closeCategoryModal} />
+                <div className="relative bg-white rounded-lg shadow-lg w-full max-w-md mx-4">
                     <div className="p-5 border-b border-gray-200 flex justify-between items-center">
-                        <h3 className="text-lg font-medium text-gray-900">Manage Categories</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">Manage Categories</h3>
                         <button onClick={closeCategoryModal}><XIcon/></button>
                     </div>
-                    <div className="p-5">
+                    <div className="p-6">
                         <form onSubmit={handleCategorySubmit} className="flex items-center mb-4">
-                            <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder={isEditingCategory ? "Update category name" : "Create a new category"} className="w-full border-gray-300 rounded-lg shadow-sm text-sm" required />
-                            <button type="submit" className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700">{isEditingCategory ? 'Update' : 'Add'}</button>
+                            <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder={isEditingCategory ? "Update category name" : "Create a new category"} className="w-full border rounded-md px-3 py-2 text-sm" required />
+                            <button type="submit" className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#111418]">{isEditingCategory ? 'Update' : 'Add'}</button>
                         </form>
                         <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                             {categories.map(cat => (
-                                <div key={cat.id} className="flex justify-between items-center bg-gray-100 p-3 rounded-lg">
+                                <div key={cat.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-md">
                                     <p className="text-sm font-medium text-gray-800">{cat.name}</p>
                                     <div className="flex items-center space-x-3">
-                                        <button onClick={() => openCategoryModal(cat)} className="text-sm text-blue-600 hover:text-blue-800 font-semibold">Edit</button>
-                                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-sm text-red-600 hover:red-800 font-semibold">Delete</button>
+                                        <button onClick={() => openCategoryModal(cat)} className="text-sm text-blue-600 hover:text-blue-800">Edit</button>
+                                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-sm text-red-600 hover:red-800">Delete</button>
                                     </div>
                                 </div>
                             ))}
@@ -295,46 +297,42 @@ const UserGuide = () => {
 
         {/* Guide Form Modal */}
         {isGuideModalOpen && (
-            <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-40">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-                    <div className="p-5 border-b flex justify-between items-center">
-                        <h3 className="text-xl font-semibold">{isEditing ? 'Edit Guide' : 'Create New Guide'}</h3>
-                        <button onClick={closeGuideModal} className="text-gray-500 hover:text-gray-800"><XIcon/></button>
-                    </div>
-                    <form onSubmit={handleGuideSubmit} className="flex-grow overflow-y-auto p-6">
-                        <div className="grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-8">
-                            <div className="sm:col-span-2">
-                                <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
-                                <input type="text" name="title" id="title" value={title} onChange={e => setTitle(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-lg shadow-sm sm:text-sm" required />
-                            </div>
-                             <div className="sm:col-span-2">
-                                <label htmlFor="subtitle" className="block text-sm font-medium text-gray-700">Subtitle</label>
-                                <input type="text" name="subtitle" id="subtitle" value={subtitle} onChange={e => setSubtitle(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-lg shadow-sm sm:text-sm" />
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                                <textarea name="description" id="description" rows="4" value={description} onChange={e => setDescription(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-lg shadow-sm sm:text-sm"></textarea>
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label htmlFor="process" className="block text-sm font-medium text-gray-700">Process (Steps)</label>
-                                <textarea name="process" id="process" rows="6" value={process} onChange={e => setProcess(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-lg shadow-sm sm:text-sm" placeholder="1. First step...\n2. Second step..."></textarea>
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label htmlFor="image" className="block text-sm font-medium text-gray-700">Image</label>
-                                <input type="file" name="image" id="image" onChange={handleImageChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
-                                {image && !imageFile && <img src={image} alt="Current" className="mt-2 h-20 rounded-lg"/>}
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
-                                <select id="category" name="category" value={category} onChange={e => setCategory(e.target.value)} className="mt-1 block w-full border-gray-300 rounded-lg shadow-sm sm:text-sm" required>
-                                    <option value="">Select a category</option>
-                                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                                </select>
-                            </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+                 <div className="absolute inset-0 bg-black/50" onClick={closeGuideModal} />
+                <div className="relative bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+                    <form onSubmit={handleGuideSubmit} className="p-6 space-y-4 flex-grow overflow-y-auto">
+                        <div className="text-lg font-semibold">{isEditing ? 'Edit Guide' : 'Create New Guide'}</div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Title</label>
+                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required />
                         </div>
-                         <div className="pt-6 mt-6 border-t border-gray-200 flex justify-end">
-                            <button type="button" onClick={closeGuideModal} className="bg-white py-2 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                            <button type="submit" disabled={isUploading} className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"> {isUploading ? 'Uploading...' : (isEditing ? 'Update Guide' : 'Create Guide')}</button>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Subtitle</label>
+                            <input type="text" value={subtitle} onChange={e => setSubtitle(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Description</label>
+                            <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" rows="4"></textarea>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Process (Steps)</label>
+                            <textarea value={process} onChange={e => setProcess(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" rows="6" placeholder="1. First step...\n2. Second step..."></textarea>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Image</label>
+                            <input type="file" onChange={handleImageChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                            {image && !imageFile && <img src={image} alt="Current" className="mt-2 h-20 rounded-md"/>}
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Category</label>
+                            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" required>
+                                <option value="">Select a category</option>
+                                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                            </select>
+                        </div>
+                         <div className="flex items-center justify-end gap-2 pt-2">
+                            <button type="button" onClick={closeGuideModal} className="px-4 py-2 text-sm rounded-md border">Cancel</button>
+                            <button type="submit" disabled={isUploading} className="px-4 py-2 text-sm rounded-md text-white bg-[#111418]">{isUploading ? 'Uploading...' : (isEditing ? 'Update Guide' : 'Create Guide')}</button>
                         </div>
                     </form>
                 </div>
