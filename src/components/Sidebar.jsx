@@ -85,6 +85,17 @@ const Sidebar = () => {
   </div>
   Admin History
 </Link>
+<Link
+          to="/user-guide"
+          className="flex items-center justify-center w-full h-10 gap-2 mt-2 text-sm font-bold leading-normal tracking-[0.015em] bg-[#f0f2f5] text-[#111418] rounded-lg hover:bg-[#e8eaed] transition-colors"
+        >
+          <div className="text-[#111418]" data-icon="Book" data-size="20px" data-weight="regular">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" fill="currentColor" viewBox="0 0 256 256">
+              <path d="M224,48H32A16,16,0,0,0,16,64V224a8,8,0,0,0,16,0V192H224a8,8,0,0,0,8-8V56A8,8,0,0,0,224,48ZM32,64H216V176H32ZM224,176h8v-8a16,16,0,0,0-16-16H208v24Z"></path>
+            </svg>
+          </div>
+          User Guide
+        </Link>
 
         {/* User Profile */}
         <div className="flex items-center gap-3 mt-4 p-3 rounded-lg hover:bg-[#f0f2f5] transition-colors cursor-pointer">
@@ -112,4 +123,4 @@ const Sidebar = () => {
   );
 };
 
-export default Sidebar; 
+export default Sidebar;

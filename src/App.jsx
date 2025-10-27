@@ -11,6 +11,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import EvacuationCenter from './components/EvacuationCenter';
 import SosPage from './components/SosPage';
 import EmergencyReports from './components/EmergencyReports';
+import UserGuide from './components/UserGuide';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
         <Route path="/evacuation-center" element={<ProtectedRoute><EvacuationCenter /></ProtectedRoute>} />
         <Route path="/sos" element={<ProtectedRoute><SosPage /></ProtectedRoute>} />
         <Route path="/emergency-reports" element={<ProtectedRoute><EmergencyReports /></ProtectedRoute>} />
+        <Route path="/user-guide" element={<ProtectedRoute><UserGuide /></ProtectedRoute>} />
       </Routes>
     </Router>
   );
